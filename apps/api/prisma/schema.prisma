@@ -1,0 +1,921 @@
+// Prisma schema cho 3800Quiz — Hệ thống quiz nội bộ ngân hàng
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  username           String    @unique
+  passwordHash       String    @map("password_hash")
+  fullName           String    @map("full_name")
+  email              String?
+  departmentId       String?   @map("department_id")
+  role               UserRole  @default(STAFF)
+  isActive           Boolean   @default(true) @map("is_active")
+  mustChangePassword Boolean   @default(true) @map("must_change_password")
+  // Khóa tài khoản tạm sau nhiều lần đăng nhập sai liên tiếp — xem
+  // auth.service.ts (ngưỡng khóa, thời gian khóa). Reset về 0/null khi đăng
+  // nhập thành công hoặc hết thời gian khóa.
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until")
+  // Xác thực 2 lớp TOTP (RFC 6238) — secret lưu ngay khi bắt đầu thiết lập
+  // (totpEnabled vẫn false), chỉ bật totpEnabled sau khi xác nhận đúng mã lần
+  // đầu. Xem auth/totp.ts.
+  totpSecret         String?   @map("totp_secret")
+  totpEnabled        Boolean   @default(false) @map("totp_enabled")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  department       Department?       @relation(fields: [departmentId], references: [id])
+  assignments      Assignment[]
+  submissions      Submission[]
+  auditLogs        AuditLog[]
+  classMembers     ClassMember[]
+  userProgress     UserProgress?
+  attempts         QuizAttempt[]
+  arenaTeamMembers ArenaTeamMember[]
+  arenaInvites     ArenaInvite[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  STAFF
+  ADMIN
+  TRAINER
+
+  @@map("user_role")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  parent              Department?          @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children            Department[]         @relation("DepartmentHierarchy")
+  users               User[]
+  assignments         Assignment[]
+  canBo               CanBo[]
+  assignmentSchedules AssignmentSchedule[]
+
+  @@map("departments")
+}
+
+model Quiz {
+  id              String   @id @default(uuid())
+  title           String
+  description     String?
+  topic           String?
+  durationMin     Int      @map("duration_min") // thời gian làm bài (phút)
+  passScore       Int?     @map("pass_score") // điểm đạt
+  isActive        Boolean  @default(true) @map("is_active")
+  // Kiểu Quizizz: hiện đúng/sai ngay sau mỗi câu rồi tự sang câu kế, đáp án đã
+  // chọn bị khoá. Mặc định TẮT — chế độ này lộ đáp án ngay trong lúc làm bài nên
+  // chỉ bật thủ công cho đề luyện tập, không dùng cho kỳ thi chính thức.
+  instantFeedback Boolean  @default(false) @map("instant_feedback")
+  // Số lần được phép làm bài (tính theo Submission đã chấm) cho mỗi lượt giao
+  // bài (Assignment). Mặc định 1 để giữ đúng hành vi cũ; 0 = không giới hạn.
+  maxAttempts     Int      @default(1) @map("max_attempts")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  versions            QuizVersion[]
+  assignments         Assignment[]
+  examSessions        ExamSession[]
+  questions           Question[]
+  arenaSessions       ArenaSession[]
+  assignmentSchedules AssignmentSchedule[]
+  tournaments         Tournament[]
+
+  @@map("quizzes")
+}
+
+model QuizVersion {
+  id        String   @id @default(uuid())
+  quizId    String   @map("quiz_id")
+  version   Int      @default(1)
+  snapshot  Json // toàn bộ nội dung quiz tại thời điểm version này
+  createdAt DateTime @default(now()) @map("created_at")
+
+  quiz        Quiz          @relation(fields: [quizId], references: [id])
+  submissions Submission[]
+  attempts    QuizAttempt[]
+
+  @@unique([quizId, version])
+  @@map("quiz_versions")
+}
+
+model Subject {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  questions Question[]
+
+  @@map("subjects")
+}
+
+model Question {
+  id              String                 @id @default(uuid())
+  quizId          String?                @map("quiz_id") // null nếu thuộc ngân hàng câu hỏi chung
+  subjectId       String?                @map("subject_id") // lĩnh vực
+  content         String
+  imageUrl        String?                @map("image_url") // ảnh minh hoạ câu hỏi (URL)
+  explanation     String? // giải thích đáp án đúng
+  questionType    QuestionType           @default(SINGLE) @map("question_type")
+  orderIndex      Int                    @default(0) @map("order_index")
+  points          Int                    @default(1)
+  isBank          Boolean                @default(false) @map("is_bank") // true = thuộc ngân hàng câu hỏi
+  // Quy trình duyệt câu hỏi mới — mặc định APPROVED để không ảnh hưởng câu hỏi
+  // cũ/câu do ADMIN tự tạo; chỉ câu hỏi ngân hàng do TRAINER tạo mới cần qua
+  // hàng chờ PENDING (xem admin.service.ts — chỗ tạo/import câu hỏi ngân
+  // hàng). Chỉ lọc theo trạng thái này khi CHỌN câu vào bộ đề/Đấu trường —
+  // không ảnh hưởng câu đã copy vào bộ đề (isBank=false, đã "chốt" từ trước).
+  approvalStatus  QuestionApprovalStatus @default(APPROVED) @map("approval_status")
+  rejectionReason String?                @map("rejection_reason")
+  submittedById   String?                @map("submitted_by_id") // không gắn @relation tới User — chỉ để tra cứu tên khi hiển thị
+  reviewedById    String?                @map("reviewed_by_id")
+  reviewedAt      DateTime?              @map("reviewed_at")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  quiz        Quiz?            @relation(fields: [quizId], references: [id])
+  subject     Subject?         @relation(fields: [subjectId], references: [id])
+  options     QuestionOption[]
+  arenaRounds ArenaRound[]
+
+  @@map("questions")
+}
+
+enum QuestionType {
+  SINGLE // chọn 1 đáp án
+  MULTIPLE // chọn nhiều đáp án
+  ORDERING // sắp xếp đúng thứ tự các mục
+
+  @@map("question_type")
+}
+
+enum QuestionApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("question_approval_status")
+}
+
+model QuestionOption {
+  id         String  @id @default(uuid())
+  questionId String  @map("question_id")
+  content    String
+  isCorrect  Boolean @default(false) @map("is_correct")
+  orderIndex Int     @map("order_index")
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("question_options")
+}
+
+model Assignment {
+  id           String           @id @default(uuid())
+  quizId       String           @map("quiz_id")
+  userId       String?          @map("user_id") // giao cho user account
+  canBoId      String?          @map("can_bo_id") // giao cho cán bộ
+  departmentId String?          @map("department_id") // giao cho phòng ban
+  startAt      DateTime?        @map("start_at")
+  endAt        DateTime?        @map("end_at")
+  status       AssignmentStatus @default(ACTIVE)
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  quiz       Quiz          @relation(fields: [quizId], references: [id])
+  user       User?         @relation(fields: [userId], references: [id])
+  canBo      CanBo?        @relation(fields: [canBoId], references: [id])
+  department Department?   @relation(fields: [departmentId], references: [id])
+  attempts   QuizAttempt[]
+
+  @@map("assignments")
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  CLOSED
+  DRAFT
+
+  @@map("assignment_status")
+}
+
+model Submission {
+  id            String           @id @default(uuid()) // UUID từ app — idempotent key
+  userId        String           @map("user_id")
+  quizId        String           @map("quiz_id")
+  quizVersionId String           @map("quiz_version_id")
+  status        SubmissionStatus @default(PENDING_SYNC)
+  score         Float?
+  isPassed      Boolean?         @map("is_passed")
+  startedAt     DateTime?        @map("started_at")
+  submittedAt   DateTime?        @map("submitted_at")
+  syncedAt      DateTime?        @map("synced_at")
+  retryCount    Int              @default(0) @map("retry_count")
+  lastRetryAt   DateTime?        @map("last_retry_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  user        User               @relation(fields: [userId], references: [id])
+  quizVersion QuizVersion        @relation(fields: [quizVersionId], references: [id])
+  answers     SubmissionAnswer[]
+  attempt     QuizAttempt?
+
+  @@map("submissions")
+}
+
+enum SubmissionStatus {
+  PENDING_SYNC // đang chờ đồng bộ
+  SYNCED // đã đồng bộ lên server
+  GRADED // đã chấm điểm
+  SYNC_ERROR // lỗi khi sync
+
+  @@map("submission_status")
+}
+
+model QuizAttempt {
+  id             String        @id // UUID do web client tạo để bảo toàn idempotency
+  userId         String        @map("user_id")
+  assignmentId   String        @map("assignment_id")
+  quizId         String        @map("quiz_id")
+  quizVersionId  String        @map("quiz_version_id")
+  submissionId   String?       @unique @map("submission_id")
+  status         AttemptStatus @default(IN_PROGRESS)
+  startedAt      DateTime      @map("started_at") @db.Timestamptz(3)
+  deadlineAt     DateTime      @map("deadline_at") @db.Timestamptz(3)
+  lastSavedAt    DateTime?     @map("last_saved_at") @db.Timestamptz(3)
+  answerRevision Int           @default(0) @map("answer_revision")
+  finalizedAt    DateTime?     @map("finalized_at") @db.Timestamptz(3)
+  timedOut       Boolean       @default(false) @map("timed_out")
+  violationCount Int           @default(0) @map("violation_count") // số lần phát hiện rời màn hình/dán nội dung khi đang làm bài
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user        User                @relation(fields: [userId], references: [id])
+  assignment  Assignment          @relation(fields: [assignmentId], references: [id])
+  quizVersion QuizVersion         @relation(fields: [quizVersionId], references: [id])
+  submission  Submission?         @relation(fields: [submissionId], references: [id])
+  answers     QuizAttemptAnswer[]
+  violations  AttemptViolation[]
+
+  @@index([userId, assignmentId, status])
+  @@index([status, deadlineAt])
+  @@map("quiz_attempts")
+}
+
+model AttemptViolation {
+  id         String               @id @default(uuid())
+  attemptId  String               @map("attempt_id")
+  type       AttemptViolationType
+  occurredAt DateTime             @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@map("attempt_violations")
+}
+
+enum AttemptViolationType {
+  TAB_HIDDEN // chuyển tab / thu nhỏ cửa sổ
+  FULLSCREEN_EXIT // thoát chế độ toàn màn hình
+  COPY_ATTEMPT // cố sao chép nội dung đề bài
+
+  @@map("attempt_violation_type")
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  GRADED
+
+  @@map("attempt_status")
+}
+
+model QuizAttemptAnswer {
+  id                String    @id @default(uuid())
+  attemptId         String    @map("attempt_id")
+  questionId        String    @map("question_id")
+  selectedOptionIds Json      @map("selected_option_ids")
+  // Chế độ phản hồi tức thì: thời điểm chốt đáp án và kết quả chấm của riêng câu
+  // này. Đã chốt thì không cho sửa nữa. Null = chưa chốt (chế độ thi thường).
+  lockedAt          DateTime? @map("locked_at") @db.Timestamptz(3)
+  isCorrect         Boolean?  @map("is_correct")
+  // Thời gian (ms) từ mốc lưu tự động GẦN NHẤT trước đó (hoặc lúc bắt đầu làm
+  // bài nếu là câu đầu tiên) tới lúc câu này LẦN ĐẦU có đáp án khác rỗng — do
+  // SERVER tính tại thời điểm gọi saveAnswers(), không tin đồng hồ client. Chỉ
+  // ghi 1 lần, không cập nhật lại khi người dùng đổi ý — dùng cho huy hiệu tốc
+  // độ ở chế độ thi thường (xem gamification.service.ts, condition fast_answer_count).
+  answeredMs        Int?      @map("answered_ms")
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@map("quiz_attempt_answers")
+}
+
+model SubmissionAnswer {
+  id                String   @id @default(uuid())
+  submissionId      String   @map("submission_id")
+  questionId        String   @map("question_id")
+  selectedOptionIds Json     @map("selected_option_ids") // array of option IDs
+  answeredAt        DateTime @map("answered_at")
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@map("submission_answers")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String // LOGIN, DOWNLOAD_QUIZ, START_QUIZ, SUBMIT, SYNC
+  entityId  String?  @map("entity_id")
+  meta      Json?
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ─── Sprint 1: Lớp học & Đợt thi ──────────────────────────────────────────
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  name      String // vd: "Năm học 2026"
+  startYear Int      @map("start_year")
+  endYear   Int      @map("end_year")
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  classes Class[]
+
+  @@map("academic_years")
+}
+
+model Class {
+  id             String   @id @default(uuid())
+  name           String
+  code           String   @unique
+  description    String?
+  academicYearId String?  @map("academic_year_id")
+  departmentId   String?  @map("department_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id])
+  members      ClassMember[]
+  examSessions ExamSession[]
+
+  @@map("classes")
+}
+
+model ClassMember {
+  id       String   @id @default(uuid())
+  classId  String   @map("class_id")
+  userId   String   @map("user_id")
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, userId])
+  @@map("class_members")
+}
+
+model ExamSession {
+  id               String            @id @default(uuid())
+  name             String
+  quizId           String            @map("quiz_id")
+  classId          String            @map("class_id")
+  startAt          DateTime          @map("start_at")
+  endAt            DateTime          @map("end_at")
+  maxAttempts      Int               @default(1) @map("max_attempts") // 0 = không giới hạn
+  scoringPolicy    ScoringPolicy     @default(HIGHEST) @map("scoring_policy")
+  durationMin      Int?              @map("duration_min") // override thời gian quiz gốc
+  shuffleQuestions Boolean           @default(false) @map("shuffle_questions")
+  shuffleOptions   Boolean           @default(false) @map("shuffle_options")
+  showResultAfter  ShowResultPolicy  @default(IMMEDIATE) @map("show_result_after")
+  allowReview      Boolean           @default(true) @map("allow_review")
+  status           ExamSessionStatus @default(DRAFT)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  quiz  Quiz  @relation(fields: [quizId], references: [id])
+  class Class @relation(fields: [classId], references: [id])
+
+  @@map("exam_sessions")
+}
+
+enum ScoringPolicy {
+  FIRST // lấy điểm lần nộp đầu tiên
+  HIGHEST // lấy điểm cao nhất
+  AVERAGE // lấy trung bình
+  LAST // lấy điểm lần nộp cuối
+
+  @@map("scoring_policy")
+}
+
+enum ShowResultPolicy {
+  IMMEDIATE // hiện ngay sau khi nộp
+  AFTER_DEADLINE // chờ hết thời gian đợt thi
+  NEVER // không hiện
+
+  @@map("show_result_policy")
+}
+
+enum ExamSessionStatus {
+  DRAFT // chưa mở
+  OPEN // đang mở
+  CLOSED // đã đóng
+
+  @@map("exam_session_status")
+}
+
+// ─── Sprint 8: Chế độ Đấu trường ──────────────────────────────────────────
+
+model ArenaSession {
+  id                  String        @id @default(uuid())
+  name                String
+  quizId              String        @map("quiz_id")
+  joinCode            String        @unique @map("join_code") // 6 ký tự [A-Z0-9]
+  passcode            String?       @map("passcode") // mật khẩu phòng tuỳ chọn — bắt buộc nhập thêm khi join, không lộ qua QR/link
+  hostMode            ArenaHostMode @default(MANUAL) @map("host_mode")
+  // @deprecated — giữ lại để không vỡ dữ liệu/API cũ. Thời gian trả lời mỗi câu
+  // nay đọc từ questionDurationSec; trường này chỉ còn dùng làm giá trị backfill.
+  autoAdvanceSec      Int           @default(10) @map("auto_advance_sec")
+  // Thời gian trả lời mỗi câu (giây) — server chốt deadline, áp dụng cho CẢ
+  // MANUAL lẫn AUTO. MC vẫn công bố sớm được, nhưng không bao giờ trễ hơn mốc này.
+  questionDurationSec Int           @default(20) @map("question_duration_sec")
+  // Khoảng dừng xem kết quả trước khi tự chuyển câu kế — chỉ dùng ở chế độ AUTO
+  // (trước đây là setTimeout(3000) cứng trong trình duyệt MC).
+  revealPauseSec      Int           @default(5) @map("reveal_pause_sec")
+  status              ArenaStatus   @default(LOBBY)
+  currentRoundOrder   Int           @default(0) @map("current_round_order")
+  // Điểm theo thứ tự đúng: [rank1, rank2, ..., rank9]
+  pointsForRank       Json          @default("[10,7,5,3,2,2,2,2,2,2]") @map("points_for_rank")
+  penaltyWrong        Int           @default(0) @map("penalty_wrong")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  quiz              Quiz              @relation(fields: [quizId], references: [id])
+  teams             ArenaTeam[]
+  rounds            ArenaRound[]
+  invites           ArenaInvite[]
+  tournamentMatches TournamentMatch[]
+
+  @@map("arena_sessions")
+}
+
+// Danh sách mời — nếu phiên có >=1 dòng invite thì trở thành phòng giới hạn
+// (allowlist): chỉ user có trong danh sách mới join được, kể cả khi có đúng
+// mã/mật khẩu. Không có invite nào = ai cũng join được như trước giờ.
+model ArenaInvite {
+  id             String   @id @default(uuid())
+  arenaSessionId String   @map("arena_session_id")
+  userId         String   @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([arenaSessionId, userId])
+  @@map("arena_invites")
+}
+
+enum ArenaStatus {
+  LOBBY // chờ đội vào
+  RUNNING // đang thi
+  FINISHED // kết thúc
+
+  @@map("arena_status")
+}
+
+enum ArenaHostMode {
+  MANUAL // MC bấm từng bước
+  AUTO // tự động đếm ngược
+
+  @@map("arena_host_mode")
+}
+
+model ArenaTeam {
+  id             String   @id @default(uuid())
+  arenaSessionId String   @map("arena_session_id")
+  name           String
+  color          String // hex color tự động assign
+  score          Int      @default(0)
+  rank           Int? // điền sau khi kết thúc
+  joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
+  // true = MC đặt tên trước lúc tạo phòng (tối đa 8 đội) — giữ lại làm "slot"
+  // ngay cả khi hết member, để người chơi khác còn chọn vào. false = đội tự
+  // phát sinh khi người chơi tự gõ tên lúc join hoặc do MC gộp thủ công —
+  // xoá luôn khi rỗng.
+  isPreset       Boolean  @default(false) @map("is_preset")
+  // Số câu trả lời ĐÚNG — tiêu chí phụ 1 khi bằng điểm (nhiều câu đúng hơn thì hơn).
+  correctCount   Int      @default(0) @map("correct_count")
+  // Tổng thời gian phản hồi (ms) của các câu ĐÚNG — tiêu chí phụ 2 khi vẫn bằng
+  // nhau (nhanh hơn thì hơn). Cộng dồn ngay lúc chốt điểm nên bảng xếp hạng
+  // LIVE cũng phá hoà đúng, không phải chờ đến lúc kết thúc mới tính.
+  totalAnswerMs  Int      @default(0) @map("total_answer_ms")
+
+  arenaSession ArenaSession      @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  members      ArenaTeamMember[] // tối đa 5 người chơi cùng đội
+  buzzes       ArenaBuzz[]
+
+  @@map("arena_teams")
+}
+
+// 1 dòng = 1 người chơi thuộc 1 đội. Đội "chơi đơn" chỉ có đúng 1 member —
+// không cần khái niệm riêng cho solo vs team, MC gộp thêm member là thành team.
+model ArenaTeamMember {
+  id             String   @id @default(uuid())
+  arenaSessionId String   @map("arena_session_id") // denormalize để ràng buộc 1 user chỉ ở 1 đội / phiên
+  arenaTeamId    String   @map("arena_team_id")
+  userId         String   @map("user_id")
+  joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
+
+  arenaTeam ArenaTeam @relation(fields: [arenaTeamId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([arenaSessionId, userId])
+  @@map("arena_team_members")
+}
+
+model ArenaRound {
+  id             String             @id @default(uuid())
+  arenaSessionId String             @map("arena_session_id")
+  questionId     String             @map("question_id")
+  order          Int // thứ tự câu trong phiên
+  status         ArenaRoundStatus   @default(PENDING)
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(3)
+  revealedAt     DateTime?          @map("revealed_at") @db.Timestamptz(3)
+  // Mốc hết giờ do SERVER chốt lúc mở câu hỏi (startedAt + questionDurationSec).
+  // Broadcast cho cả MC và người chơi để mọi màn hình đếm ngược cùng một mốc.
+  deadlineAt     DateTime?          @map("deadline_at") @db.Timestamptz(3)
+  // Vì sao câu này được công bố — phục vụ đối soát khi có khiếu nại về điểm.
+  revealReason   ArenaRevealReason? @map("reveal_reason")
+
+  arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  question     Question     @relation(fields: [questionId], references: [id])
+  buzzes       ArenaBuzz[]
+
+  @@unique([arenaSessionId, order])
+  @@map("arena_rounds")
+}
+
+enum ArenaRoundStatus {
+  PENDING // chưa bắt đầu
+  ACTIVE // đang hiển thị câu hỏi
+  REVEALED // đã reveal đáp án
+
+  @@map("arena_round_status")
+}
+
+enum ArenaRevealReason {
+  HOST // MC bấm công bố sớm
+  DEADLINE // hết giờ, server tự công bố
+  SKIPPED // MC bấm sang câu kế khi chưa công bố — server vẫn chốt điểm đầy đủ
+
+  @@map("arena_reveal_reason")
+}
+
+model ArenaBuzz {
+  id                String   @id @default(uuid())
+  arenaRoundId      String   @map("arena_round_id")
+  teamId            String   @map("team_id")
+  selectedOptionIds Json     @map("selected_option_ids")
+  // Mốc CHÍNH THỨC dùng để xếp hạng — ĐÃ bù trễ mạng.
+  answeredAt        DateTime @map("answered_at") @db.Timestamptz(3)
+  // Mốc thô server nhận được gói tin, CHƯA bù trễ — giữ để kiểm toán/đối soát.
+  receivedAt        DateTime @map("received_at") @db.Timestamptz(3)
+  isCorrect         Boolean  @map("is_correct")
+  pointsAwarded     Int      @default(0) @map("points_awarded")
+  correctRank       Int?     @map("correct_rank") // 1 = nhanh nhất đúng
+  // Hạng theo tốc độ tính trên MỌI đáp án của câu (kể cả sai) — dùng để hiển thị.
+  speedRank         Int?     @map("speed_rank")
+  // Thời gian trả lời chính thức (ms) tính từ lúc câu hỏi bắt đầu, ĐÃ bù trễ mạng.
+  responseMs        Int      @default(0) @map("response_ms")
+  // Thời gian trả lời thô (ms), CHƯA bù trễ — hiển thị khi MC cần soi chi tiết.
+  rawResponseMs     Int      @default(0) @map("raw_response_ms")
+  // Độ trễ khứ hồi (RTT, ms) server tự đo được của đúng socket đã gửi đáp án này.
+  latencyMs         Int      @default(0) @map("latency_ms")
+  // Ảnh chụp điểm đội trước/sau khi chốt câu này — nhờ đó dựng lại được bảng
+  // công bố (kể cả thứ hạng tăng/giảm) mà không cần bảng phụ nào.
+  scoreBefore       Int      @default(0) @map("score_before")
+  scoreAfter        Int      @default(0) @map("score_after")
+
+  arenaRound ArenaRound @relation(fields: [arenaRoundId], references: [id], onDelete: Cascade)
+  team       ArenaTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([arenaRoundId, teamId])
+  @@map("arena_buzzes")
+}
+
+model CanBo {
+  id                 String    @id @default(uuid())
+  cbCode             String    @unique @map("cb_code")
+  fullName           String    @map("full_name")
+  username           String?   @map("username")
+  email              String?
+  phoneNumber        String?   @map("phone_number")
+  userAD             String?   @map("user_ad")
+  userIPCAS          String?   @map("user_ipcas")
+  maCbtd             String?   @map("ma_cbtd")
+  cccd               String?
+  ngayCapCmt         String?   @map("ngay_cap_cmt")
+  noiCapCmt          String?   @map("noi_cap_cmt")
+  ngaySinh           DateTime? @map("ngay_sinh")
+  gioiTinh           String?   @map("gioi_tinh")
+  departmentId       String?   @map("department_id")
+  position           String?
+  isPartyMember      Boolean   @default(false) @map("is_party_member")
+  isUnionMember      Boolean   @default(false) @map("is_union_member")
+  isYouthUnionMember Boolean   @default(false) @map("is_youth_union_member")
+  isItStaff          Boolean   @default(false) @map("is_it_staff")
+  isActive           Boolean   @default(true) @map("is_active")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  department  Department?  @relation(fields: [departmentId], references: [id])
+  assignments Assignment[]
+
+  @@map("can_bo")
+}
+
+// ─── Sprint 9: Gamification ────────────────────────────────────────────────
+
+model UserProgress {
+  id                      String    @id @default(uuid())
+  userId                  String    @unique @map("user_id")
+  xp                      Int       @default(0)
+  level                   Int       @default(1)
+  currentStreak           Int       @default(0) @map("current_streak")
+  maxStreak               Int       @default(0) @map("max_streak")
+  totalSubmissions        Int       @default(0) @map("total_submissions")
+  totalPassed             Int       @default(0) @map("total_passed")
+  totalArenaWins          Int       @default(0) @map("total_arena_wins")
+  lastActivityDate        DateTime? @map("last_activity_date") @db.Date
+  // Phao cứu chuỗi ngày (kiểu Duolingo streak freeze) — tự động dùng 1 phao khi
+  // nghỉ ĐÚNG 1 ngày để giữ nguyên currentStreak thay vì reset về 1. Cấp lại 1
+  // phao mỗi 30 ngày, dự trữ tối đa 2. Xem updateActivity() trong gamification.service.ts.
+  streakFreezeCount       Int       @default(2) @map("streak_freeze_count")
+  lastStreakFreezeGrantAt DateTime? @map("last_streak_freeze_grant_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xpTransactions XpTransaction[]
+  userBadges     UserBadge[]
+
+  @@map("user_progress")
+}
+
+model LevelDefinition {
+  id        String   @id @default(uuid())
+  level     Int      @unique
+  name      String
+  minXp     Int      @map("min_xp")
+  color     String // hex color, vd: "#4CAF50"
+  iconSlug  String?  @map("icon_slug")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("level_definitions")
+}
+
+model XpTransaction {
+  id             String   @id @default(uuid())
+  userProgressId String   @map("user_progress_id")
+  userId         String   @map("user_id")
+  amount         Int
+  source         XpSource
+  referenceId    String?  @map("reference_id")
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  userProgress UserProgress @relation(fields: [userProgressId], references: [id], onDelete: Cascade)
+
+  @@map("xp_transactions")
+}
+
+enum XpSource {
+  EXAM_PASS
+  EXAM_FAIL
+  EXAM_PERFECT
+  ARENA_PARTICIPATE
+  ARENA_WIN
+  STREAK_BONUS
+  BADGE_BONUS
+  DAILY_QUESTION
+
+  @@map("xp_source")
+}
+
+model BadgeDefinition {
+  id            String        @id @default(uuid())
+  code          String        @unique
+  name          String
+  description   String
+  iconSlug      String        @map("icon_slug") // tên file SVG không có .svg
+  category      BadgeCategory
+  conditionJson Json          @map("condition_json")
+  xpBonus       Int           @default(0) @map("xp_bonus")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  userBadges UserBadge[]
+
+  @@map("badge_definitions")
+}
+
+enum BadgeCategory {
+  EXAM
+  STREAK
+  ARENA
+  PROGRESS
+  LEVEL
+  SPEED // tốc độ trả lời — Đấu trường và/hoặc bài thi thường
+  MASTERY // thành thạo theo lĩnh vực (subjectId) + cột mốc XP trọn đời
+  SPECIAL // huy hiệu ẩn (???), mang tính bất ngờ tích cực
+
+  @@map("badge_category")
+}
+
+model UserBadge {
+  id                String   @id @default(uuid())
+  userProgressId    String   @map("user_progress_id")
+  userId            String   @map("user_id")
+  badgeDefinitionId String   @map("badge_definition_id")
+  awardedAt         DateTime @default(now()) @map("awarded_at")
+
+  userProgress    UserProgress    @relation(fields: [userProgressId], references: [id], onDelete: Cascade)
+  badgeDefinition BadgeDefinition @relation(fields: [badgeDefinitionId], references: [id])
+
+  @@unique([userId, badgeDefinitionId])
+  @@map("user_badges")
+}
+
+// ─── Việc 3: Câu hỏi khởi động mỗi ngày ────────────────────────────────────
+// Không lưu bảng "câu hỏi hôm nay" riêng — mỗi ngày server tự chọn 1 câu từ
+// ngân hàng (isBank=true) bằng hàm băm chuỗi ngày (xem daily-question.service.ts),
+// mọi người dùng cùng ngày thấy cùng 1 câu. Bảng này chỉ ghi lại ai đã trả lời.
+model DailyQuestionAttempt {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  date              DateTime @map("date") @db.Date
+  questionId        String   @map("question_id")
+  selectedOptionIds Json     @map("selected_option_ids")
+  isCorrect         Boolean  @map("is_correct")
+  answeredAt        DateTime @default(now()) @map("answered_at")
+
+  @@unique([userId, date])
+  @@map("daily_question_attempts")
+}
+
+// ─── Việc 5: Ôn tập ngắt quãng (Spaced Repetition, thuật toán SM-2 rút gọn) ─
+// Thẻ được TẠO LƯỜI khi user trả lời sai 1 câu trong bài thi thường (đọc từ
+// QuizAttemptAnswer, xem review.service.ts) — không cần hook vào
+// attempts.service.ts (file đang có phiên khác chỉnh sửa).
+model ReviewCard {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  questionId     String    @map("question_id")
+  easeFactor     Float     @default(2.5) @map("ease_factor")
+  intervalDays   Int       @default(0) @map("interval_days")
+  repetitions    Int       @default(0)
+  dueAt          DateTime  @default(now()) @map("due_at")
+  lastReviewedAt DateTime? @map("last_reviewed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@unique([userId, questionId])
+  @@map("review_cards")
+}
+
+// ─── Việc 8: Lịch giao bài tự động định kỳ ─────────────────────────────────
+model AssignmentSchedule {
+  id           String             @id @default(uuid())
+  quizId       String             @map("quiz_id")
+  departmentId String?            @map("department_id") // null = toàn bộ cán bộ đang hoạt động
+  recurrence   ScheduleRecurrence
+  dayOfWeek    Int?               @map("day_of_week") // 0=CN..6=Thứ 7 — dùng khi WEEKLY
+  dayOfMonth   Int?               @map("day_of_month") // 1-31 — dùng khi MONTHLY (>số ngày trong tháng thì chạy vào ngày cuối tháng)
+  durationDays Int                @default(7) @map("duration_days") // bài mở trong bao nhiêu ngày kể từ lúc tự động giao
+  isActive     Boolean            @default(true) @map("is_active")
+  lastRunAt    DateTime?          @map("last_run_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  quiz       Quiz        @relation(fields: [quizId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  @@map("assignment_schedules")
+}
+
+enum ScheduleRecurrence {
+  DAILY
+  WEEKLY
+  MONTHLY
+
+  @@map("schedule_recurrence")
+}
+
+// ─── Việc 20: Giải đấu nhiều vòng loại trực tiếp ───────────────────────────
+// Mỗi trận đấu (TournamentMatch) tái dùng NGUYÊN VẸN cỗ máy Đấu trường sẵn có
+// (tạo 1 ArenaSession với đúng 2 đội preset) — module này KHÔNG đụng tới
+// arena.service.ts/arena.gateway.ts, chỉ tạo phiên rồi đọc kết quả sau khi
+// phiên FINISHED để xác định đội thắng và đẩy vào trận vòng kế tiếp.
+model Tournament {
+  id             String           @id @default(uuid())
+  name           String
+  quizId         String           @map("quiz_id")
+  status         TournamentStatus @default(DRAFT)
+  totalRounds    Int              @map("total_rounds")
+  currentRound   Int              @default(1) @map("current_round")
+  championTeamId String?          @map("champion_team_id")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  quiz    Quiz              @relation(fields: [quizId], references: [id])
+  teams   TournamentTeam[]
+  matches TournamentMatch[]
+
+  @@map("tournaments")
+}
+
+enum TournamentStatus {
+  DRAFT
+  RUNNING
+  FINISHED
+
+  @@map("tournament_status")
+}
+
+model TournamentTeam {
+  id           String   @id @default(uuid())
+  tournamentId String   @map("tournament_id")
+  name         String
+  seed         Int
+  isEliminated Boolean  @default(false) @map("is_eliminated")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, name])
+  @@map("tournament_teams")
+}
+
+// team1Id/team2Id/winnerTeamId cố tình KHÔNG gắn @relation tới TournamentTeam
+// (tránh phải đặt tên 3 quan hệ trùng đích) — tra theo id trong tournament.teams
+// ở tầng service khi cần hiển thị tên.
+model TournamentMatch {
+  id             String                @id @default(uuid())
+  tournamentId   String                @map("tournament_id")
+  round          Int
+  orderInRound   Int                   @map("order_in_round")
+  team1Id        String?               @map("team1_id")
+  team2Id        String?               @map("team2_id")
+  winnerTeamId   String?               @map("winner_team_id")
+  arenaSessionId String?               @map("arena_session_id")
+  status         TournamentMatchStatus @default(PENDING)
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  tournament   Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  arenaSession ArenaSession? @relation(fields: [arenaSessionId], references: [id])
+
+  @@unique([tournamentId, round, orderInRound])
+  @@map("tournament_matches")
+}
+
+enum TournamentMatchStatus {
+  PENDING // chưa đủ 2 đội (chờ đội thắng vòng trước tiến vào)
+  READY // đã đủ 2 đội, sẵn sàng tạo phiên Đấu trường
+  RUNNING // đã tạo phiên Đấu trường, đang thi
+  DONE // đã có kết quả, đội thắng đã tiến vòng sau (hoặc vô địch)
+
+  @@map("tournament_match_status")
+}
+
+// ─── Việc 16: Kiểm soát phiên đăng nhập nâng cao ───────────────────────────
+// Không gắn @relation tới User — chỉ để tra cứu khi admin xem danh sách toàn
+// hệ thống. JWT access token mang theo `sid` = id dòng này; jwt.strategy.ts
+// kiểm tra còn tồn tại và chưa bị revoke ở MỌI request đã xác thực.
+model UserSession {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  userAgent  String?   @map("user_agent")
+  ipAddress  String?   @map("ip_address")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  @@map("user_sessions")
+}

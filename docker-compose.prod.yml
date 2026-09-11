@@ -1,0 +1,227 @@
+# ============================================================================
+# 3800Quiz — Docker Compose PRODUCTION (máy chủ nội bộ, không có Internet)
+#
+# Máy chủ PROD không có Internet nên không build được ở đây — build ảnh ở một
+# máy có mạng, `docker save`/`docker load` mang ảnh sang, rồi chạy KHÔNG kèm
+# --build (xem DEPLOYMENT.md Giai đoạn 4 và 6):
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# ĐÂY LÀ FILE ĐỘC LẬP, KHÔNG merge với docker-compose.yml của môi trường dev.
+# Lý do bắt buộc phải tách hẳn: file dev mount ./db/migrations vào
+# docker-entrypoint-initdb.d, mà Docker Compose khi gộp nhiều file chỉ biết
+# CỘNG DỒN danh sách volumes chứ không gỡ bỏ được. Trên cơ sở dữ liệu trắng,
+# mount đó tạo sẵn schema CŨ khiến `prisma migrate deploy` thất bại (P3005).
+#
+# RÀNG BUỘC KIẾN TRÚC — TUYỆT ĐỐI KHÔNG scale service api lên nhiều instance:
+#   - attempts.service.ts dùng setInterval trong tiến trình để quét bài hết giờ
+#     → nhiều instance sẽ cùng chốt một bài.
+#   - arena.gateway.ts không có Redis adapter cho Socket.IO → người chơi nối vào
+#     instance A không nhận được sự kiện phát từ instance B, Đấu trường hỏng
+#     theo kiểu ngắt quãng rất khó chẩn đoán.
+# ============================================================================
+
+name: quiz3800
+
+# Xoay vòng log. Driver json-file mặc định KHÔNG giới hạn dung lượng — trên
+# Windows Server để lâu sẽ âm thầm làm đầy ổ C:.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+services:
+  # ──────────────────────────────────────────────────────────────────────────
+  # PostgreSQL 16 — không publish port, không mount db/migrations
+  # ──────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: quiz3800_db
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # ⚠ CỐ Ý không mount ./db/migrations như bản dev — xem ghi chú đầu file.
+    # Postgres cần shared memory cho sort/hash join; Docker mặc định chỉ cấp 64MB.
+    shm_size: 256mb
+    # SIGINT = fast shutdown, đúng khuyến nghị của Postgres khi chạy trong Docker.
+    # SIGTERM mặc định là smart shutdown, sẽ chờ client ngắt hết rồi mới dừng
+    # nên thường bị Docker kill cưỡng bức giữa chừng.
+    stop_signal: SIGINT
+    stop_grace_period: 60s
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+    # Chỉ mở khi cần dùng pgAdmin/DBeaver NGAY TRÊN máy chủ. Bind 127.0.0.1
+    # để tuyệt đối không lộ Postgres ra mạng nội bộ hay Internet.
+    # ports:
+    #   - "127.0.0.1:15434:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # API — NestJS + Prisma + Socket.IO. Không publish port ra host.
+  # ──────────────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    image: quiz3800/api:${IMAGE_TAG:-latest}
+    container_name: quiz3800_api
+    restart: unless-stopped
+    logging: *default-logging
+    # CỐ Ý không dùng env_file: ./apps/api/.env — file đó là cấu hình dev
+    # (DATABASE_URL trỏ localhost:15434, JWT_SECRET mẫu). Ở production mọi biến
+    # lấy từ .env.prod qua nội suy ${...} để chỉ có một nguồn sự thật duy nhất.
+    environment:
+      NODE_ENV: production
+      PORT: 13011
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=10&pool_timeout=30
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://quiz.vbaquangbinh.com}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # node:22-alpine không có curl; Node 22 đã có sẵn fetch() toàn cục.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:13011/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    stop_grace_period: 30s
+    networks:
+      - backend
+      - edge
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1536M
+        reservations:
+          memory: 384M
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # WEB — SPA tĩnh do nginx:alpine phục vụ. Không publish port ra host.
+  # Ở production Caddy gọi thẳng api:13011 cho /api và /socket.io, không đi qua
+  # nginx của container này (bớt một chặng và bớt một chỗ phải chỉnh giới hạn).
+  # ──────────────────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    image: quiz3800/web:${IMAGE_TAG:-latest}
+    container_name: quiz3800_web
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      - api
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/index.html']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - edge
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 192M
+        reservations:
+          memory: 32M
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # CADDY — reverse proxy + TLS nội bộ tự cấp (không cần Internet/Let's Encrypt).
+  # Container DUY NHẤT publish port ra ngoài.
+  # ──────────────────────────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: quiz3800_proxy
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - '80:80' # chuyển hướng HTTP sang HTTPS
+      - '443:443'
+      # Cổng kiểm thử nội bộ, chỉ nghe trên chính máy chủ — dùng để nghiệm thu
+      # TRƯỚC KHI đổi DNS/hosts trỏ về. Không mở ra mạng.
+      - '127.0.0.1:8080:8080'
+    environment:
+      # Tên DNS nội bộ, đăng ký qua RODC trỏ về IP tĩnh của máy ảo (DEPLOYMENT.md
+      # Giai đoạn 3.6) — KHÔNG phải domain công khai. Caddy tự cấp chứng chỉ từ
+      # CA nội bộ của chính nó (`tls internal` trong Caddyfile) nên không cần
+      # ACME_EMAIL/Let's Encrypt.
+      SITE_ADDRESS: ${SITE_ADDRESS:-quiz.vbaquangbinh.com}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # caddy_data giữ CA nội bộ (root.crt) + khoá riêng + chứng chỉ đã cấp.
+      # ⚠ MẤT VOLUME NÀY LÀ MẤT LUÔN CA GỐC: Caddy sẽ tự sinh CA mới, nhưng
+      #   root.crt cũ đã cài trên MỌI máy client (Giai đoạn 9) sẽ không còn
+      #   khớp — toàn bộ máy phải cài lại chứng chỉ gốc mới. Sao lưu volume
+      #   này cùng lịch sao lưu database.
+      - caddy_data:/data
+      - caddy_config:/config
+    # condition: service_healthy — healthcheck của Caddy gọi xuyên qua api (xem
+    # dưới), nếu Caddy khởi động song song lúc api còn đang boot thì các lần
+    # kiểm tra đầu của CHÍNH Caddy sẽ trượt oan, tốn hết lượt thử healthcheck.
+    # Đợi web/api "healthy" trước rồi mới bật Caddy như api đã đợi postgres.
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      # Kiểm tra xuyên suốt chuỗi caddy → api qua cổng nội bộ 8080
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - edge
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          memory: 32M
+
+networks:
+  edge:
+    driver: bridge
+  backend:
+    driver: bridge
+    # internal: true → Postgres không có đường ra Internet và không thể bị gọi
+    # từ ngoài network này. Chỉ api nằm ở cả hai network mới nói chuyện được.
+    internal: true
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,19 @@
+# Không đưa những thứ này vào build context của Docker.
+# Quan trọng nhất: file .env chứa JWT_SECRET và mật khẩu DB — nếu lọt vào
+# `COPY . .` thì bí mật nằm vĩnh viễn trong layer của image.
+
+node_modules
+dist
+*.tsbuildinfo
+
+# Bí mật
+.env
+.env.*
+!.env.example
+
+# Test e2e — đã bị tsconfig.build.json loại trừ, không cần khi build image
+test
+
+# Rác
+*.log
+.DS_Store

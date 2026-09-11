@@ -1,0 +1,8 @@
+# Cố định xuống dòng LF cho mọi file văn bản.
+# Git trên Windows mặc định core.autocrlf=true sẽ đổi LF thành CRLF khi clone —
+# dòng này giữ nguyên LF để cấu hình dùng trong container (Caddyfile, nginx.conf,
+# script shell) không bị lệch khi triển khai trên Windows Server.
+* text=auto eol=lf
+
+# Script PowerShell chạy trực tiếp trên Windows — giữ CRLF cho đúng chuẩn hệ điều hành
+*.ps1 text eol=crlf

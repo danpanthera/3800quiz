@@ -1,0 +1,109 @@
+# ============================================================================
+# 3800Quiz — Caddy reverse proxy + TLS nội bộ (không có Internet, không ACME)
+#
+# Máy chủ chạy trong mạng nội bộ ngân hàng, không ra được Internet nên KHÔNG
+# dùng Let's Encrypt được (ACME cần Internet để xác thực domain). Site công
+# khai bên dưới dùng `tls internal` — Caddy tự làm CA riêng của nó và tự cấp
+# chứng chỉ hoàn toàn offline. Chỉ cần cài chứng chỉ gốc của CA đó (xuất ra
+# bằng `docker cp quiz3800_proxy:/data/caddy/pki/authorities/local/root.crt .`)
+# vào "Trusted Root Certification Authorities" trên các máy client (qua GPO
+# cho máy trong domain) — xem DEPLOYMENT.md Giai đoạn 9.
+#
+# Ngoài việc cấp chứng chỉ, Caddy vẫn tự làm các việc sau:
+#   - Chuyển hướng toàn bộ HTTP sang HTTPS
+#   - Nâng cấp WebSocket đúng chuẩn, không tự cắt kết nối đang rảnh
+#     → Đấu trường chạy được mà không phải khai báo header thủ công như Nginx
+# ============================================================================
+{
+	# Tắt admin API (mặc định nghe ở localhost:2019 trong container) — không dùng tới.
+	admin off
+
+	servers {
+		# Cố ý chỉ dùng HTTP/1.1 và HTTP/2, không bật HTTP/3: mạng doanh nghiệp
+		# hay chặn UDP, và WebSocket của Socket.IO chạy trên HTTP/1.1 Upgrade
+		# nên HTTP/3 không mang lại lợi ích gì ở đây.
+		protocols h1 h2
+	}
+}
+
+# ── Cấu hình dùng chung cho cả site công khai và site kiểm thử nội bộ ────────
+(quiz_app) {
+	# Nén phản hồi. Cần thiết vì Caddy nói chuyện TRỰC TIẾP với api — luồng này
+	# không đi qua nginx của container web nên không được nginx nén hộ.
+	encode zstd gzip
+
+	# Giới hạn kích thước body. Multer ở tầng ứng dụng cho 10MB; đặt ở đây cao
+	# hơn (25MB) để lỗi "file quá lớn" phát sinh từ API kèm thông báo tiếng Việt,
+	# thay vì bị proxy cắt phũ bằng một mã 413 trần trụi.
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+	}
+
+	# ── REST API ────────────────────────────────────────────────────────────
+	# main.ts đặt setGlobalPrefix('api') nên API nhận nguyên đường dẫn /api/...
+	# — KHÔNG được cắt bỏ prefix ở đây.
+	# Caddy tự thêm X-Forwarded-For / X-Forwarded-Proto / X-Forwarded-Host.
+	handle /api/* {
+		reverse_proxy api:13011
+	}
+
+	# ── Socket.IO (Đấu trường real-time) ────────────────────────────────────
+	# BẮT BUỘC phải có khối riêng: IoAdapter gắn Socket.IO ở đường dẫn gốc
+	# (/socket.io), NẰM NGOÀI prefix /api vì setGlobalPrefix chỉ áp cho REST
+	# controller. Thiếu khối này thì /socket.io/ rơi xuống khối SPA bên dưới,
+	# bị proxy sang nginx của web và trả 404 → Đấu trường không kết nối được.
+	# Client dùng transports: ['websocket'], KHÔNG có phương án lùi về polling,
+	# nên hỏng là hỏng hoàn toàn và im lặng.
+	handle /socket.io/* {
+		reverse_proxy api:13011
+	}
+
+	# ── Portal web (SPA) — mọi đường dẫn còn lại ────────────────────────────
+	handle {
+		reverse_proxy web:80
+	}
+
+	# Trang báo thân thiện khi API/web đang dựng lại hoặc đang chạy migration.
+	# CHỈ bắt nhóm lỗi "máy chủ đích không trả lời" (502/503/504). Không được
+	# bắt tất cả: lỗi 413 (file import quá lớn) mà hiện ra trang "đang bảo trì"
+	# thì người dùng sẽ hiểu sai hoàn toàn nguyên nhân.
+	handle_errors 502 503 504 {
+		header Content-Type "text/html; charset=utf-8"
+		respond `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>3800Quiz — Đang bảo trì</title></head><body style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#EEF2FF;color:#1f2937;text-align:center"><div><h1 style="color:#1565C0;margin-bottom:8px">3800Quiz đang bảo trì</h1><p>Hệ thống đang được cập nhật. Vui lòng thử lại sau vài phút.</p><p style="color:#6b7280;font-size:14px">Mã lỗi: {err.status_code}</p></div></body></html>` 503
+	}
+}
+
+# ── Site công khai trong mạng nội bộ, HTTPS bằng CA nội bộ của Caddy ────────
+{$SITE_ADDRESS} {
+	import quiz_app
+
+	# Chứng chỉ tự cấp từ CA nội bộ của Caddy — không gọi ra Internet.
+	# root.crt của CA này cần cài vào Trusted Root trên máy client (xem đầu file).
+	tls internal
+
+	# HSTS — chỉ đặt trên site HTTPS thật.
+	# ⚠ Tuần đầu nên để max-age=86400 (1 ngày). Chỉ nâng lên 31536000 sau khi
+	#   chắc chắn HTTPS đã ổn định: một khi trình duyệt đã nhận HSTS thì nó
+	#   KHÔNG cho quay lại HTTP cho tới khi hết hạn, kể cả lúc chứng chỉ hỏng.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# ── Site kiểm thử nội bộ: HTTP thuần, chỉ nghe trên 127.0.0.1 của máy chủ ────
+# Dùng để nghiệm thu TRƯỚC KHI kích hoạt HTTPS nội bộ (http://127.0.0.1:8080,
+# xem DEPLOYMENT.md Giai đoạn 8), và cũng là đích cho healthcheck của container caddy.
+:8080 {
+	import quiz_app
+}

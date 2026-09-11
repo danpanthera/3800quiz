@@ -1,0 +1,19 @@
+# Không đưa những thứ này vào build context của Docker.
+# `node_modules` của máy dev (macOS) mà lọt vào sẽ đè lên kết quả `npm ci`
+# trong container và gây lỗi native module khi build trên máy khác.
+
+node_modules
+dist
+*.tsbuildinfo
+
+# Bí mật
+.env
+.env.*
+
+# File Excel mẫu — không nằm trong public/ nên không được build vào dist,
+# và có thể chứa dữ liệu nhân sự thật
+Mau
+
+# Rác
+*.log
+.DS_Store

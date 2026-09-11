@@ -1,0 +1,39 @@
+# Dependencies & build output
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+.eslintcache
+
+# Biến môi trường & bí mật — không bao giờ commit
+.env
+.env.*
+!.env.example
+!.env.prod.example
+*.pem
+*.key
+*.jks
+*.keystore
+*.p8
+*.p12
+
+# Log
+*.log
+npm-debug.log*
+
+# Editor / hệ điều hành
+.vscode/
+.idea/
+*.local
+.DS_Store
+Thumbs.db
+
+# Prisma
+apps/api/prisma/migrations/dev.db
+
+# Dữ liệu nhân sự thật (GAHR26 chứa CCCD, ngày sinh, số điện thoại,
+# địa chỉ, số tài khoản... của cán bộ) — tuyệt đối không đưa lên git
+apps/web/Mau/**/gahr26*
+apps/web/Mau/**/GAHR26*

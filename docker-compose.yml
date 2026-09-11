@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quiz3800_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: quiz3800
+    ports:
+      - "15434:5432"  # dải port riêng cho 3800quiz trên máy dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: quiz3800_api
+    restart: unless-stopped
+    env_file:
+      - ./apps/api/.env
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quiz3800?schema=public
+    ports:
+      - "13011:13011"  # dải port riêng cho 3800quiz trên máy dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: quiz3800_web
+    restart: unless-stopped
+    ports:
+      - "15174:80"  # dải port riêng cho 3800quiz trên máy dev
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

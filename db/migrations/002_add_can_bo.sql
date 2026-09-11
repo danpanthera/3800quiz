@@ -1,0 +1,26 @@
+-- Migration: Thêm bảng can_bo để quản lý cán bộ
+CREATE TABLE IF NOT EXISTS can_bo (
+  id                   TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  cb_code              VARCHAR(20) NOT NULL UNIQUE,
+  full_name            VARCHAR(255) NOT NULL,
+  username             VARCHAR(100),
+  email                VARCHAR(255),
+  phone_number         VARCHAR(20),
+  user_ad              VARCHAR(100),
+  user_ipcas           VARCHAR(100),
+  ma_cbtd              VARCHAR(50),
+  cccd                 VARCHAR(20),
+  ngay_cap_cmt         VARCHAR(20),
+  noi_cap_cmt          VARCHAR(200),
+  ngay_sinh            TIMESTAMP,
+  gioi_tinh            VARCHAR(10),
+  department_id        TEXT REFERENCES departments(id) ON DELETE SET NULL,
+  position             VARCHAR(100),
+  is_party_member      BOOLEAN NOT NULL DEFAULT FALSE,
+  is_union_member      BOOLEAN NOT NULL DEFAULT FALSE,
+  is_youth_union_member BOOLEAN NOT NULL DEFAULT FALSE,
+  is_it_staff          BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMP NOT NULL DEFAULT NOW()
+);
