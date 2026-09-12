@@ -109,6 +109,7 @@ export class AdminController {
     @Body('subjectId') subjectId: string,
     @Body('dryRun') dryRun?: string,
     @Body('sheetName') sheetName?: string,
+    @Body('importDuplicates') importDuplicates?: string,
   ) {
     return this.adminService.importQuestionsFromExcel(
       file.buffer,
@@ -116,6 +117,7 @@ export class AdminController {
       dryRun === 'true',
       sheetName,
       req.user,
+      importDuplicates === 'true',
     );
   }
 
@@ -131,6 +133,7 @@ export class AdminController {
       body.subjectId,
       body.rows,
       req.user,
+      body.importDuplicates ?? false,
     );
   }
 

@@ -55,13 +55,13 @@ export default function LoginPage() {
       <section className="login-brand" aria-label="3800Quiz">
         <div className="login-brand-lockup">
           <span className="login-brand-mark"><BankOutlined /></span>
-          <Text>Hệ thống thi thử nghiệp vụ</Text>
+          <Text>Agribank Chi nhánh Quảng Bình</Text>
         </div>
         <div className="login-brand-title">
           <Title level={1}>3800Quiz</Title>
           <p className="login-brand-statement">Thi thử nghiệp vụ<br />Đấu trường kiến thức</p>
         </div>
-        <Text className="login-brand-footer">Agribank Chi nhánh Quảng Bình</Text>
+        <Text className="login-brand-footer">R&D by IT Dept</Text>
       </section>
 
       <section className="login-form-region">

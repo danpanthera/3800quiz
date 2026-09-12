@@ -232,7 +232,13 @@ export default function QuizzesPage() {
       </Tooltip>
       <Popconfirm title="Xóa bộ đề?" onConfirm={() => deleteMutation.mutate(quiz.id)}>
         <Tooltip title="Xóa bộ đề">
-          <Button aria-label={`Xóa ${quiz.title}`} icon={<DeleteOutlined />} size="small" danger />
+          <Button
+            aria-label={`Xóa ${quiz.title}`}
+            icon={<DeleteOutlined />}
+            size="small"
+            danger
+            loading={deleteMutation.isPending && deleteMutation.variables === quiz.id}
+          />
         </Tooltip>
       </Popconfirm>
     </Space>

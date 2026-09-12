@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -41,4 +42,11 @@ export class ImportBankQuestionsDto {
   @ValidateNested({ each: true })
   @Type(() => ImportBankQuestionRowDto)
   rows: ImportBankQuestionRowDto[];
+
+  // Mặc định (false/không gửi) giữ hành vi cũ: câu trùng hoàn toàn/gần trùng
+  // (duplicateLevel 'exact'/'high') bị tự động bỏ qua. Admin bật cờ này ở modal
+  // xem trước để vẫn import cả những câu đó thay vì bị âm thầm bỏ qua.
+  @IsOptional()
+  @IsBoolean()
+  importDuplicates?: boolean;
 }

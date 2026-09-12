@@ -6,6 +6,7 @@ import { AuthProvider } from './lib/auth'
 import RequireAuth from './components/RequireAuth'
 import RoleGuard from './components/RoleGuard'
 import HomeRedirect from './components/HomeRedirect'
+import ReloadPrompt from './components/ReloadPrompt'
 import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/LoginPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
@@ -154,6 +155,7 @@ export default function App() {
         }}
       >
         <AntApp>
+        <ReloadPrompt />
         <AuthProvider>
           <BrowserRouter>
             <Routes>

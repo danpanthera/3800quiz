@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Layout, Menu, Button, Table, Space, Tag, Popconfirm, message,
   Modal, Form, Input, Select, Upload, Typography, Divider, Tooltip,
-  Drawer, Radio, Checkbox, Alert, Badge, theme,
+  Drawer, Radio, Checkbox, Alert, Badge, Switch, theme,
 } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, EditOutlined,
@@ -126,6 +126,9 @@ export default function QuestionsPage() {
   const [sheetNames, setSheetNames] = useState<string[]>([])
   const [selectedSheet, setSelectedSheet] = useState<string | undefined>()
   const [loadingSheets, setLoadingSheets] = useState(false)
+  // Mặc định TẮT: giữ hành vi cũ (tự động bỏ qua câu trùng/gần trùng). Admin bật
+  // lên nếu chủ đích muốn import cả những câu đã bị đánh dấu trùng.
+  const [importDuplicates, setImportDuplicates] = useState(false)
 
   // ── Sửa nhanh 1 dòng trong bảng xem trước (vd để khắc phục cảnh báo chính tả) ──
   const [editingRow, setEditingRow] = useState<PreviewRow | null>(null)
@@ -174,11 +177,13 @@ export default function QuestionsPage() {
     mutationFn: ({ id, ...data }: { id: string } & SubjectFormValues) =>
       api.put(`/admin/subjects/${id}`, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }); setSubjectModalOpen(false); setEditSubject(null); subjectForm.resetFields() },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi sửa lĩnh vực')),
   })
 
   const deleteSubjectMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/subjects/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }) },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi xóa lĩnh vực')),
   })
 
   // ── Ngân hàng câu hỏi ────────────────────────────────────────────────
@@ -196,6 +201,7 @@ export default function QuestionsPage() {
       qc.invalidateQueries({ queryKey: ['subjects'] })
       setQuestionDrawerOpen(false); questionForm.resetFields()
     },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi tạo câu hỏi')),
   })
 
   const updateQuestionMutation = useMutation({
@@ -204,6 +210,7 @@ export default function QuestionsPage() {
       qc.invalidateQueries({ queryKey: ['bank-questions'] })
       setQuestionDrawerOpen(false); setEditQuestion(null); questionForm.resetFields()
     },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi sửa câu hỏi')),
   })
 
   const deleteQuestionMutation = useMutation({
@@ -213,6 +220,7 @@ export default function QuestionsPage() {
       qc.invalidateQueries({ queryKey: ['subjects'] })
       message.success('Đã xóa')
     },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi xóa câu hỏi')),
   })
 
   const deleteAllQuestionsMutation = useMutation({
@@ -295,6 +303,7 @@ export default function QuestionsPage() {
     try {
       const res = await api.post('/admin/bank-questions/import/confirm', {
         subjectId: selectedSubjectId,
+        importDuplicates,
         rows: previewData.map((r) => ({
           rowNumber: r.rowNumber,
           content: r.content,
@@ -442,7 +451,7 @@ export default function QuestionsPage() {
   const closeImportModal = () => {
     setImportModalOpen(false); setImportFile(null)
     setPreviewStep('upload'); setPreviewData([]); setPreviewErrors([])
-    setSheetNames([]); setSelectedSheet(undefined)
+    setSheetNames([]); setSelectedSheet(undefined); setImportDuplicates(false)
     closeRowEdit()
   }
 
@@ -842,7 +851,9 @@ export default function QuestionsPage() {
                 onClick={handleImport}
                 icon={<CheckCircleOutlined />}
               >
-                Xác nhận import {previewData.filter((r) => !r.duplicateLevel || r.duplicateLevel === 'medium').length} câu mới
+                Xác nhận import {previewData.filter((r) =>
+                  importDuplicates || !r.duplicateLevel || r.duplicateLevel === 'medium',
+                ).length} câu
               </Button>
             </Space>
           )
@@ -901,7 +912,9 @@ export default function QuestionsPage() {
                 overflowCount={9999}
                 color="red"
               >
-                <Tag color="red" style={{ padding: '4px 12px' }}>🔴 Trùng (sẽ bỏ qua)</Tag>
+                <Tag color="red" style={{ padding: '4px 12px' }}>
+                  🔴 Trùng {importDuplicates ? '(vẫn import)' : '(sẽ bỏ qua)'}
+                </Tag>
               </Badge>
               <Badge
                 count={previewData.filter((r) => r.duplicateLevel === 'medium').length}
@@ -918,6 +931,14 @@ export default function QuestionsPage() {
                 <Tag color="gold" style={{ padding: '4px 12px' }}>✏️ Cảnh báo chính tả</Tag>
               </Badge>
             </Space>
+
+            {/* Mặc định tự động bỏ qua câu 🔴 Trùng để tránh trùng lặp ngân hàng câu hỏi
+                — admin bật công tắc này khi chủ đích muốn import cả những câu đó (VD
+                trùng do phát hiện nhầm, hoặc muốn cố ý có bản gần giống). */}
+            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Switch size="small" checked={importDuplicates} onChange={setImportDuplicates} />
+              <Text>Vẫn import cả câu 🔴 Trùng, không tự động bỏ qua</Text>
+            </div>
 
             {previewErrors.length > 0 && (
               <Alert type="error" message={`${previewErrors.length} dòng lỗi cấu trúc`}

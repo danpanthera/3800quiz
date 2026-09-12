@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Progress } from 'antd'
+import { Button, Progress, Switch } from 'antd'
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
@@ -49,11 +49,12 @@ interface Props {
   onFinish: () => void
 }
 
-// Thời gian giữ màn hình kết quả trước khi tự sang câu kế. Trả lời sai được xem
-// lâu hơn để kịp đọc đáp án đúng và lời giải.
-const AUTO_ADVANCE_CORRECT_MS = 1_500
-const AUTO_ADVANCE_WRONG_MS = 3_200
+// Thời gian giữ màn hình kết quả trước khi tự sang câu kế — CHỈ áp dụng khi
+// người làm bật công tắc "Tự động chuyển câu"; tắt công tắc thì phải tự bấm
+// "Tiếp tục" (nút này luôn có sẵn nên bật/tắt công tắc không đổi cách bấm tay).
+const AUTO_ADVANCE_DELAY_MS = 5_000
 const SOUND_STORAGE_KEY = '3800quiz.instant-player.sound'
+const AUTO_ADVANCE_STORAGE_KEY = '3800quiz.instant-player.auto-advance'
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60)
@@ -97,6 +98,15 @@ export default function InstantQuizPlayer({
       return true
     }
   })
+  // Mặc định BẬT để giữ nguyên hành vi trước đây (luôn tự chuyển câu) cho người
+  // làm chưa từng đụng tới công tắc này.
+  const [autoAdvance, setAutoAdvance] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_ADVANCE_STORAGE_KEY) !== 'off'
+    } catch {
+      return true
+    }
+  })
   const advanceTimer = useRef<number | undefined>(undefined)
 
   const currentQuestion = questions[currentIndex]
@@ -131,6 +141,15 @@ export default function InstantQuizPlayer({
       }
       return next
     })
+  }
+
+  const toggleAutoAdvance = (next: boolean) => {
+    setAutoAdvance(next)
+    try {
+      localStorage.setItem(AUTO_ADVANCE_STORAGE_KEY, next ? 'on' : 'off')
+    } catch {
+      /* trình duyệt chặn localStorage — chỉ mất ghi nhớ lựa chọn, bỏ qua */
+    }
   }
 
   const goNext = useCallback(() => {
@@ -198,15 +217,14 @@ export default function InstantQuizPlayer({
     goNextRef.current = goNext
   })
 
-  // Tự sang câu kế sau khi xem xong kết quả; người làm vẫn bấm "Tiếp tục" để đi ngay.
+  // Tự sang câu kế sau khi xem xong kết quả — CHỈ khi công tắc autoAdvance đang
+  // bật; người làm luôn bấm "Tiếp tục" được để đi ngay bất kể công tắc.
   const revealedQuestionId = currentResult ? currentQuestion?.id : undefined
-  const revealedIsCorrect = currentResult?.isCorrect
   useEffect(() => {
-    if (!revealedQuestionId) return
-    const delay = revealedIsCorrect ? AUTO_ADVANCE_CORRECT_MS : AUTO_ADVANCE_WRONG_MS
-    advanceTimer.current = window.setTimeout(() => goNextRef.current(), delay)
+    if (!revealedQuestionId || !autoAdvance) return
+    advanceTimer.current = window.setTimeout(() => goNextRef.current(), AUTO_ADVANCE_DELAY_MS)
     return () => window.clearTimeout(advanceTimer.current)
-  }, [revealedQuestionId, revealedIsCorrect])
+  }, [revealedQuestionId, autoAdvance])
 
   if (!currentQuestion) return null
 
@@ -255,6 +273,18 @@ export default function InstantQuizPlayer({
           )}
           <span className="iq-score">
             <ThunderboltFilled /> {correctCount}
+          </span>
+          <span
+            className="iq-auto-advance"
+            title="Tự động chuyển sang câu tiếp theo sau 5 giây, dù trả lời đúng hay sai. Tắt để tự bấm &quot;Tiếp tục&quot;."
+          >
+            <Switch
+              size="small"
+              checked={autoAdvance}
+              onChange={toggleAutoAdvance}
+              aria-label="Tự động chuyển câu sau 5 giây"
+            />
+            <span className="iq-auto-advance-label">Tự động chuyển câu sau 5s</span>
           </span>
           <button
             type="button"
@@ -392,6 +422,11 @@ export default function InstantQuizPlayer({
               <span>Đáp án đúng đã được đánh dấu màu xanh ở trên.</span>
             )}
             {currentResult.explanation && <span className="iq-explanation">{currentResult.explanation}</span>}
+            {!isLastPending && (
+              <span className="iq-verdict-hint">
+                {autoAdvance ? 'Tự động chuyển câu sau 5 giây…' : 'Bấm "Tiếp tục" để sang câu kế'}
+              </span>
+            )}
           </div>
           <Button
             size="large"

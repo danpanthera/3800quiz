@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# 7800Quiz — Đặt IP cho card mạng máy ảo Ubuntu (DEPLOYMENT.md 3.2 + Phụ lục A)
+# 3800Quiz — Đặt IP cho card mạng máy ảo Ubuntu (DEPLOYMENT.md 3.2 + Phụ lục A)
 #
 # Tạo sẵn để gõ 1 lệnh ngắn qua console Hyper-V Connect, thay vì soạn tay file
 # YAML nhiều dòng nhiều ký tự đặc biệt (#, :, [, ], thụt lề) — rất dễ gõ sai

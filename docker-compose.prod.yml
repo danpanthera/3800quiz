@@ -92,6 +92,10 @@ services:
       NODE_ENV: production
       PORT: 13011
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      # bcrypt băm mật khẩu chạy trên threadpool libuv, mặc định chỉ 4 luồng —
+      # giờ thi ~200 người đăng nhập cùng lúc sẽ xếp hàng chờ đúng 4 luồng đó
+      # dù CPU/mạng còn dư. Nới lên 16 (tối đa cho phép của libuv là 1024).
+      UV_THREADPOOL_SIZE: 16
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=10&pool_timeout=30
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}

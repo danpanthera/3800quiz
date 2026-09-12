@@ -294,19 +294,14 @@ cd /opt/3800quiz
 sudo bash scripts/prod-set-static-ip.sh <IP/CIDR> <gateway> <dns>
 ```
 
-Ví dụ — 3 giá trị này lấy từ `ipconfig /all` trên Windows (đúng card đang có IP thật của máy chủ), **không đoán**:
+Giá trị thật dùng cho máy chủ này — máy ảo đặt IP `10.73.0.22` trên **card mạng thứ 2** của máy chủ vật lý (không phải card LAN chính của máy thật, subnet mask `255.255.255.0` = `/24`, gateway `10.73.0.1`), DNS nội bộ *(Sếp bổ sung IP máy chủ RODC của chi nhánh — nối bằng dấu phẩy nếu có DNS phụ, **không dấu cách**)*:
 ```bash
-sudo bash scripts/prod-set-static-ip.sh 10.20.1.50/24 10.20.1.1 10.20.1.2
-```
-
-Có DNS phụ (dự phòng) thì nối vào DNS chính bằng dấu phẩy, **không dấu cách**:
-```bash
-sudo bash scripts/prod-set-static-ip.sh 10.20.1.50/24 10.20.1.1 10.20.1.2,10.20.1.3
+sudo bash scripts/prod-set-static-ip.sh 10.73.0.22/24 10.73.0.1 <dns>
 ```
 
 Script mặc định dùng card `eth0` — nếu `ip addr` cho thấy tên khác thì thêm tham số thứ 4. Chạy xong script tự kiểm tra (IP, bảng định tuyến, ping gateway) và **ghi nhớ** cấu hình này — lần sau chỉ cần chạy `sudo bash scripts/prod-set-static-ip.sh` (không tham số) là quay lại đúng IP tĩnh này, dùng ở Phụ lục A khi cập nhật. Chạy lại (VD gõ nhầm) vẫn an toàn, file cũ tự được sao lưu kèm thời gian trước khi ghi đè.
 
-Ghi lại IP này — dùng để đăng ký DNS ở bước 3.6.
+Ghi lại IP này (`10.73.0.22`) — dùng để đăng ký DNS ở bước 3.6.
 
 ### 3.3. Mở tường lửa trong Ubuntu
 
@@ -336,7 +331,7 @@ Vẫn cần lưu ý 3 điểm sau khi triển khai chung:
 
 Dùng tên nội bộ thay vì gõ thẳng IP — người dùng dễ nhớ, và IP máy ảo có đổi sau này cũng chỉ cần sửa 1 bản ghi DNS thay vì báo lại toàn bộ chi nhánh. Máy chủ đang dùng **RODC** (Read-Only Domain Controller) làm DNS, nên cần đúng thứ tự sau — **không tạo được bản ghi trực tiếp trên RODC**, RODC chỉ giữ **bản sao chỉ-đọc** của zone.
 
-1. Trên **một Domain Controller ghi được** (writable DC, không phải RODC): mở **DNS Manager** → Forward Lookup Zones → zone `vbaquangbinh.com` → chuột phải → **New Host (A or AAAA)...** → Name: `quiz` → IP address: đúng IP tĩnh của máy ảo đã đặt ở bước 3.2 (VD `10.20.1.50`) → Add Host.
+1. Trên **một Domain Controller ghi được** (writable DC, không phải RODC): mở **DNS Manager** → Forward Lookup Zones → zone `vbaquangbinh.com` → chuột phải → **New Host (A or AAAA)...** → Name: `quiz` → IP address: đúng IP tĩnh của máy ảo đã đặt ở bước 3.2 (`10.73.0.22`) → Add Host.
 2. Chờ bản ghi replicate về RODC theo lịch AD replication bình thường, hoặc ép ngay cho gấp:
    ```powershell
    repadmin /syncall /AdeP
@@ -344,7 +339,7 @@ Dùng tên nội bộ thay vì gõ thẳng IP — người dùng dễ nhớ, và
 3. Kiểm tra từ một máy client đang dùng RODC đó làm DNS server (thường là máy trong cùng chi nhánh với RODC):
    ```powershell
    nslookup quiz.vbaquangbinh.com
-   # Kỳ vọng: trả đúng IP tĩnh của máy ảo, VD 10.20.1.50
+   # Kỳ vọng: trả đúng IP tĩnh của máy ảo, 10.73.0.22
    ```
 
 > **Lưu ý**: nếu `vbaquangbinh.com` cũng là domain public thật (website/email ra Internet), bản ghi `quiz` này **chỉ tồn tại trong DNS nội bộ** của ngân hàng — không đăng ký ra ngoài, không ảnh hưởng gì tới domain public. Bên ngoài mạng nội bộ (kể cả dùng đúng URL) sẽ không phân giải được, đây là hành vi đúng của DNS nội bộ (split-horizon), không phải lỗi.
@@ -659,6 +654,7 @@ curl -s http://127.0.0.1:8080/api/health   # kiểm tra bỏ qua HTTPS/chứng c
 | `scripts/prod-setup-vm.ps1` | `D:\quiz\scripts\` (Windows) | Dựng máy ảo Ubuntu tự động (Giai đoạn 2.2) |
 | `scripts/prod-setup-app.sh` | Mã nguồn (trong VM) | Cài Docker + build + khởi tạo ứng dụng tự động (Giai đoạn 2.3) |
 | `scripts/prod-set-static-ip.sh` | Mã nguồn (trong VM) | Đặt IP tĩnh qua netplan tự động (Giai đoạn 3.2) |
+| `scripts/migrate-docker-dataroot.sh` | Mã nguồn (trong VM) | Chuyển dữ liệu Docker (Postgres...) sang ổ SCSI mới — chạy 1 lần khi ổ hệ điều hành đang gắn IDE |
 | `docker-compose.prod.yml` | `/opt/3800quiz` (trong VM) | Cấu hình toàn bộ hệ thống production |
 | `Caddyfile` | `/opt/3800quiz` (trong VM) | Cấu hình reverse proxy + HTTPS nội bộ (`tls internal`) |
 | `.env.prod` | `/opt/3800quiz` (trong VM) | **Bí mật** — mật khẩu DB, khoá JWT (không commit, không chia sẻ qua kênh không an toàn) |

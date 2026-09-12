@@ -694,8 +694,15 @@ select {
 }
 
 .login-brand-footer.ant-typography {
-  color: var(--pearl-white);
-  font-size: 16px;
+  /* margin-top: auto ghim luôn xuống mép dưới cùng của .login-brand (flex column),
+     không phụ thuộc vào justify-content: space-between nếu sau này nội dung phía
+     trên (tiêu đề/statement) đổi chiều cao. */
+  margin-top: auto;
+  padding-top: 24px;
+  color: rgba(248, 244, 236, 0.55);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .login-form-region {
@@ -859,14 +866,29 @@ select {
   }
 }
 
+/* Tôn trọng thiết lập "giảm chuyển động" của hệ điều hành.
+ *
+ * ⚠ CỐ Ý KHÔNG dùng đoạn mẫu phổ biến trên mạng:
+ *     *, *::before, *::after { animation-duration: 0.01ms !important; ... }
+ *   Ant Design mở popup nổi (Tooltip, Popconfirm, Select, Dropdown — đều chạy
+ *   trên @rc-component/trigger) bằng cách giữ popup ở opacity 0 rồi CHỜ sự kiện
+ *   "hiệu ứng kết thúc" mới gỡ lớp ẩn. Ép thời lượng về ~0 cho MỌI phần tử làm
+ *   sự kiện đó không bao giờ tới nơi → popup nằm trong DOM nhưng vô hình vĩnh viễn.
+ *   Ngày 12/09/2026 lỗi này khiến MỌI nút xóa trên PROD của 7800quiz "bấm không
+ *   có phản ứng gì" ở mọi máy Windows có tắt hiệu ứng hoạt ảnh; Modal thoát nạn
+ *   vì chạy trên rc-dialog, không đi qua trigger.
+ *   Vì vậy chỉ tắt hiệu ứng của CHÍNH dự án, tuyệt đối không đụng vào hiệu ứng
+ *   nội bộ của Ant Design. Hiệu ứng của Đấu trường và màn làm bài đã có khối
+ *   @media riêng ở phía dưới file này.
+ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html {
     scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  }
+
+  .ant-layout-content,
+  .arena-view-transition {
+    animation: none;
   }
 }
 
@@ -1969,6 +1991,22 @@ p {
 .iq-sound:hover { background: rgba(251, 247, 242, 0.22); }
 .iq-sound-off { opacity: 0.45; text-decoration: line-through; }
 
+.iq-auto-advance {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 8px;
+  border-radius: 999px;
+  background: rgba(251, 247, 242, 0.12);
+  border: 1px solid rgba(251, 247, 242, 0.16);
+  backdrop-filter: blur(6px);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iq-pearl);
+}
+
+.iq-auto-advance-label { white-space: nowrap; }
+
 /* ── Tiến độ ─────────────────────────────────────────────────────────────── */
 .iq-progress { position: relative; display: flex; flex-direction: column; gap: 8px; }
 .iq-progress .ant-progress-line { margin: 0; }
@@ -2194,6 +2232,7 @@ p {
 .iq-verdict-body strong { font-size: 18px; font-weight: 800; }
 .iq-verdict-body span { font-size: 13px; color: var(--iq-pearl-dim); }
 .iq-explanation { padding-top: 4px; font-style: italic; }
+.iq-verdict-hint { padding-top: 2px; font-size: 12px; opacity: 0.85; }
 
 .iq-next-button.ant-btn {
   height: 44px;
@@ -2217,6 +2256,9 @@ p {
   .iq-verdict-face { font-size: 32px; }
   .iq-next-button.ant-btn { width: 100%; }
   .iq-quiz-title { max-width: 52vw; }
+  /* Màn hẹp: giữ công tắc, ẩn chữ chú thích — vẫn còn tooltip title trên chính công tắc */
+  .iq-auto-advance { padding: 5px 8px; }
+  .iq-auto-advance-label { display: none; }
 }
 
 /* Tôn trọng thiết lập giảm chuyển động của hệ điều hành */

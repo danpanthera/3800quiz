@@ -37,6 +37,26 @@ async function getSpellChecker(): Promise<NSpellChecker> {
   return _spellChecker;
 }
 
+// nspell.suggest() rất chậm (~40ms/từ): import 240 câu từng mất hơn 20 giây chỉ
+// ở bước kiểm tra chính tả. Nhớ kết quả theo từng từ trong suốt vòng đời tiến
+// trình — cùng một từ lạ (tên riêng, viết tắt nghiệp vụ như CNTT, IPCAS...) lặp
+// lại ở hàng trăm dòng thì chỉ tính đúng 1 lần. null = từ đúng chính tả.
+const SPELL_CACHE_MAX = 50_000;
+const spellCache = new Map<string, string[] | null>();
+function lookupSpelling(
+  checker: NSpellChecker,
+  word: string,
+): string[] | null {
+  const cached = spellCache.get(word);
+  if (cached !== undefined) return cached;
+  const result = checker.correct(word)
+    ? null
+    : checker.suggest(word).slice(0, 3);
+  if (spellCache.size >= SPELL_CACHE_MAX) spellCache.clear();
+  spellCache.set(word, result);
+  return result;
+}
+
 // ── Các hàm hỗ trợ phát hiện trùng lặp ────────────────────────────────
 function normalizeText(text: string): string {
   return text
@@ -421,10 +441,18 @@ export class AdminService {
       }[];
     }[]
   > {
-    const existing = await this.prisma.question.findMany({
+    const existingRaw = await this.prisma.question.findMany({
       where: { isBank: true },
       select: { id: true, content: true },
     });
+    // Tiền xử lý normalize/tokenize cho từng câu hỏi có sẵn ĐÚNG 1 LẦN — import
+    // cả trăm dòng cùng lúc mà tính lại cho existing ở mỗi dòng (texts.length
+    // lần) từng khiến bước kiểm tra trùng lặp rất chậm với ngân hàng câu hỏi lớn.
+    const existing = existingRaw.map((q) => ({
+      ...q,
+      norm: normalizeText(q.content),
+      tokens: tokenize(q.content),
+    }));
 
     return texts.map((text, index) => {
       const queryTokens = tokenize(text);
@@ -437,8 +465,7 @@ export class AdminService {
       }[] = [];
 
       for (const q of existing) {
-        const existNorm = normalizeText(q.content);
-        if (queryNorm === existNorm) {
+        if (queryNorm === q.norm) {
           matches.push({
             id: q.id,
             content: q.content,
@@ -447,7 +474,7 @@ export class AdminService {
           });
           continue;
         }
-        const score = jaccardSimilarity(queryTokens, tokenize(q.content));
+        const score = jaccardSimilarity(queryTokens, q.tokens);
         if (score >= 0.85)
           matches.push({ id: q.id, content: q.content, score, level: 'high' });
         else if (score >= 0.65)
@@ -480,14 +507,12 @@ export class AdminService {
       const warnings: { word: string; suggestions: string[] }[] = [];
       const seen = new Set<string>();
       for (const word of words) {
-        if (seen.has(word)) continue;
+        // Bỏ qua token có chữ số (số hiệu văn bản, năm, mã...) — không bao giờ
+        // có trong từ điển, chỉ sinh cảnh báo vô nghĩa và tốn suggest() rất chậm.
+        if (seen.has(word) || /\d/.test(word)) continue;
         seen.add(word);
-        if (!checker.correct(word)) {
-          warnings.push({
-            word,
-            suggestions: checker.suggest(word).slice(0, 3),
-          });
-        }
+        const suggestions = lookupSpelling(checker, word);
+        if (suggestions) warnings.push({ word, suggestions });
       }
       return { rowIndex, warnings };
     });
@@ -505,6 +530,7 @@ export class AdminService {
     dryRun = false,
     sheetName?: string,
     submittedBy?: { id: string; role: string },
+    importDuplicates = false,
   ): Promise<{
     preview?: {
       rowNumber: number;
@@ -619,6 +645,7 @@ export class AdminService {
       subjectId,
       parsed,
       submittedBy,
+      importDuplicates,
     );
     return {
       imported: created.imported,
@@ -633,6 +660,10 @@ export class AdminService {
   // Luôn tự chấm lại trùng lặp ngay tại đây thay vì tin dữ liệu duplicateLevel do
   // client gửi lên, để câu vừa sửa nội dung cũng được đánh giá đúng bằng dữ liệu
   // DB mới nhất, không dùng kết quả trùng lặp đã cũ từ bước xem trước.
+  //
+  // importDuplicates=false (mặc định): câu trùng hoàn toàn/gần trùng (exact/high)
+  // bị tự động bỏ qua như trước giờ. true: admin đã xác nhận vẫn muốn import cả
+  // những câu đó (VD chủ đích thêm câu hỏi gần giống để đa dạng đề thi).
   private async createBankQuestions(
     subjectId: string,
     rows: {
@@ -643,6 +674,7 @@ export class AdminService {
       explanation: string | null;
     }[],
     submittedBy?: { id: string; role: string },
+    importDuplicates = false,
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     if (rows.length === 0) return { imported: 0, skipped: 0, errors: [] };
 
@@ -656,7 +688,11 @@ export class AdminService {
     for (let idx = 0; idx < rows.length; idx++) {
       const row = rows[idx];
       const topDup = dupResults[idx].matches[0];
-      if (topDup && (topDup.level === 'exact' || topDup.level === 'high')) {
+      if (
+        !importDuplicates &&
+        topDup &&
+        (topDup.level === 'exact' || topDup.level === 'high')
+      ) {
         skipped++;
         continue;
       }
@@ -701,6 +737,7 @@ export class AdminService {
     subjectId: string,
     rows: ImportBankQuestionRowDto[],
     submittedBy?: { id: string; role: string },
+    importDuplicates = false,
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     if (!subjectId)
       throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
@@ -752,6 +789,7 @@ export class AdminService {
       subjectId,
       valid,
       submittedBy,
+      importDuplicates,
     );
     return {
       imported: created.imported,
@@ -876,12 +914,21 @@ export class AdminService {
     const quiz = await this.prisma.quiz.findUniqueOrThrow({
       where: { id },
       include: {
-        _count: { select: { assignments: true, examSessions: true } },
+        _count: {
+          select: { assignments: true, examSessions: true, tournaments: true },
+        },
       },
     });
     if (quiz._count.assignments > 0 || quiz._count.examSessions > 0)
       throw new BadRequestException(
         'Không thể xóa bộ đề đã được phân công hoặc có đợt thi. Hãy xóa phân công trước.',
+      );
+    // tournaments_quiz_id_fkey là RESTRICT (không cascade) — không kiểm tra trước
+    // thì lệnh xóa bên dưới ném lỗi ràng buộc khóa ngoại (P2003) không được bắt,
+    // NestJS trả 500 chung chung khiến giao diện tưởng như "không có phản hồi gì".
+    if (quiz._count.tournaments > 0)
+      throw new BadRequestException(
+        'Không thể xóa bộ đề đang được dùng cho giải đấu loại trực tiếp. Hãy xóa giải đấu đó trước.',
       );
 
     // Xóa cascade các phiên Arena (ArenaTeam/ArenaRound/ArenaBuzz đã được DB tự động cascade)
@@ -907,6 +954,13 @@ export class AdminService {
           where: { id: { in: submissionIds } },
         });
       }
+      // quiz_attempts_quiz_version_id_fkey là RESTRICT — xóa trước khi xóa
+      // quiz_versions, không thì vỡ ràng buộc khóa ngoại. Đồng bộ với cách xử
+      // lý submissions ở trên: xóa bộ đề là xóa luôn lịch sử làm bài liên
+      // quan (DB tự cascade quiz_attempt_answers/attempt_violations).
+      await this.prisma.quizAttempt.deleteMany({
+        where: { quizVersionId: { in: versionIds } },
+      });
       await this.prisma.quizVersion.deleteMany({ where: { quizId: id } });
     }
     return this.prisma.quiz.delete({ where: { id } });
