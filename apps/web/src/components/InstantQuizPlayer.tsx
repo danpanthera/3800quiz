@@ -3,6 +3,8 @@ import { Button, Progress, Switch } from 'antd'
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
+  AudioMutedOutlined,
+  AudioOutlined,
   CheckOutlined,
   ClockCircleOutlined,
   CloseOutlined,
@@ -12,6 +14,7 @@ import {
 } from '@ant-design/icons'
 import api from '../lib/api'
 import { fireConfetti, playCorrectSound, playWrongSound } from '../lib/feedback-fx'
+import { dangBatGiongDoc, datGiongDoc, docLanLuot, dungGiongDoc, moiGiongDoc } from '../lib/giong-doc'
 
 export interface InstantQuizOption {
   id: string
@@ -108,6 +111,9 @@ export default function InstantQuizPlayer({
     }
   })
   const advanceTimer = useRef<number | undefined>(undefined)
+  // Mặc định TẮT (khác autoAdvance/soundOn) — bật giọng đọc bất ngờ giữa phòng
+  // thi chung sẽ gây khó chịu, ai cần thì tự bật.
+  const [narrationOn, setNarrationOn] = useState(() => dangBatGiongDoc('instant'))
 
   const currentQuestion = questions[currentIndex]
   const currentResult = currentQuestion ? results[currentQuestion.id] : undefined
@@ -152,6 +158,19 @@ export default function InstantQuizPlayer({
     }
   }
 
+  const toggleNarration = () => {
+    setNarrationOn((on) => {
+      const next = !on
+      // Bắt buộc gọi moiGiongDoc() NGAY TRONG handler click này (không phải
+      // trong effect) — chỉ cử chỉ bấm tay của người dùng mới mở khoá được
+      // quyền autoplay của trình duyệt cho các lần phát bằng code về sau.
+      if (next) moiGiongDoc()
+      else dungGiongDoc()
+      datGiongDoc('instant', next)
+      return next
+    })
+  }
+
   const goNext = useCallback(() => {
     window.clearTimeout(advanceTimer.current)
     const nextIndex = questions.findIndex((q, i) => i > currentIndex && !results[q.id])
@@ -171,6 +190,7 @@ export default function InstantQuizPlayer({
   const lockAnswer = useCallback(
     async (selectedOptionIds: string[]) => {
       if (!currentQuestion || isLocking || isRevealing) return
+      dungGiongDoc() // tiếng đọc không được đè lên beep đúng/sai lúc chốt đáp án
       setIsLocking(true)
       setLockError(null)
       try {
@@ -225,6 +245,31 @@ export default function InstantQuizPlayer({
     advanceTimer.current = window.setTimeout(() => goNextRef.current(), AUTO_ADVANCE_DELAY_MS)
     return () => window.clearTimeout(advanceTimer.current)
   }, [revealedQuestionId, autoAdvance])
+
+  // Đọc lĩnh vực + đề + A/B/C/D khi sang câu mới — TÁCH RIÊNG khỏi effect
+  // auto-advance ở trên (không dùng chung deps): 2 effect này độc lập, gộp
+  // chung sẽ lặp lại đúng lỗi mà chú thích ở dòng 231-234 đã cảnh báo.
+  useEffect(() => {
+    if (!narrationOn || !currentQuestion || isRevealing) return
+    const cacDapAn = currentQuestion.options
+      .slice()
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map((o) => o.content)
+    const cumTuA = ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D']
+    const doc: string[] = []
+    if (currentQuestion.subjectName) doc.push('Lĩnh vực', currentQuestion.subjectName)
+    doc.push(currentQuestion.content)
+    cacDapAn.forEach((noiDung, i) => {
+      if (cumTuA[i]) doc.push(cumTuA[i])
+      doc.push(noiDung)
+    })
+    void docLanLuot(doc)
+    return () => dungGiongDoc()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ đọc lại khi ĐỔI câu hoặc bật/tắt công tắc, không phải mỗi lần currentQuestion object đổi identity
+  }, [currentQuestion?.id, narrationOn, isRevealing])
+
+  // Dừng hẳn khi rời màn hình (nộp bài, chuyển route…).
+  useEffect(() => () => dungGiongDoc(), [])
 
   if (!currentQuestion) return null
 
@@ -294,6 +339,15 @@ export default function InstantQuizPlayer({
             title={soundOn ? 'Tắt âm thanh' : 'Bật âm thanh'}
           >
             <SoundOutlined />
+          </button>
+          <button
+            type="button"
+            className={`iq-narrate${narrationOn ? '' : ' iq-narrate-off'}`}
+            onClick={toggleNarration}
+            aria-label={narrationOn ? 'Tắt giọng đọc thuyết minh' : 'Bật giọng đọc thuyết minh'}
+            title={narrationOn ? 'Tắt giọng đọc thuyết minh' : 'Bật giọng đọc đề bài và đáp án'}
+          >
+            {narrationOn ? <AudioOutlined /> : <AudioMutedOutlined />}
           </button>
           <span className={`iq-timer${isTimeLow ? ' iq-timer-low' : ''}`}>
             <ClockCircleOutlined /> {formatTime(remainingSeconds)}

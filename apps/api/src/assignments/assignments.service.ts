@@ -79,7 +79,9 @@ export class AssignmentsService {
     // để không phá client đang dùng.
     return assignments.map(({ attempts, ...rest }) => {
       const gradedAttempts = attempts.filter((a) => a.status === 'GRADED');
-      const bestAttempt = gradedAttempts.reduce<(typeof gradedAttempts)[number] | null>(
+      const bestAttempt = gradedAttempts.reduce<
+        (typeof gradedAttempts)[number] | null
+      >(
         (best, a) =>
           !best || (a.submission?.score ?? -1) > (best.submission?.score ?? -1)
             ? a

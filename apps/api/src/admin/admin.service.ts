@@ -43,10 +43,7 @@ async function getSpellChecker(): Promise<NSpellChecker> {
 // lại ở hàng trăm dòng thì chỉ tính đúng 1 lần. null = từ đúng chính tả.
 const SPELL_CACHE_MAX = 50_000;
 const spellCache = new Map<string, string[] | null>();
-function lookupSpelling(
-  checker: NSpellChecker,
-  word: string,
-): string[] | null {
+function lookupSpelling(checker: NSpellChecker, word: string): string[] | null {
   const cached = spellCache.get(word);
   if (cached !== undefined) return cached;
   const result = checker.correct(word)
@@ -143,12 +140,20 @@ export class AdminService {
     suffix: string;
     name: string;
   }[] = [
-    { keyword: 'kiến giang', suffix: 'PGDKG', name: 'Phòng Giao dịch Kiến Giang' },
-    { keyword: 'chợ tràm',   suffix: 'PGDCT', name: 'Phòng Giao dịch Chợ Tràm' },
-    { keyword: 'mỹ đức',     suffix: 'PGDMD', name: 'Phòng Giao dịch Mỹ Đức' },
-    { keyword: 'nam long',   suffix: 'PGDNL', name: 'Phòng Giao dịch Nam Long' },
-    { keyword: 'dinh mười',  suffix: 'PGDDM', name: 'Phòng Giao dịch Dinh Mười' },
-    { keyword: 'chợ ga',     suffix: 'PGDCG', name: 'Phòng Giao dịch Chợ Ga' },
+    {
+      keyword: 'kiến giang',
+      suffix: 'PGDKG',
+      name: 'Phòng Giao dịch Kiến Giang',
+    },
+    { keyword: 'chợ tràm', suffix: 'PGDCT', name: 'Phòng Giao dịch Chợ Tràm' },
+    { keyword: 'mỹ đức', suffix: 'PGDMD', name: 'Phòng Giao dịch Mỹ Đức' },
+    { keyword: 'nam long', suffix: 'PGDNL', name: 'Phòng Giao dịch Nam Long' },
+    {
+      keyword: 'dinh mười',
+      suffix: 'PGDDM',
+      name: 'Phòng Giao dịch Dinh Mười',
+    },
+    { keyword: 'chợ ga', suffix: 'PGDCG', name: 'Phòng Giao dịch Chợ Ga' },
   ];
 
   // Nhận diện loại phòng ban từ tên trong file GAHR26 (DEPTNM) → hậu tố mã + tên
@@ -160,7 +165,10 @@ export class AdminService {
     const n = deptName.toLowerCase();
     const pgdSo = n.match(/(?:pgd|phòng giao dịch)\s*(?:số)?\s*(\d+)/);
     if (pgdSo)
-      return { suffix: `PGD${pgdSo[1]}`, name: `Phòng Giao dịch số ${pgdSo[1]}` };
+      return {
+        suffix: `PGD${pgdSo[1]}`,
+        name: `Phòng Giao dịch số ${pgdSo[1]}`,
+      };
     // PGD đặt theo tên địa danh (không đánh số) — khớp theo danh sách phòng giao dịch hiện có
     if (n.includes('pgd') || n.includes('phòng giao dịch')) {
       const namedPgd = AdminService.NAMED_PGD.find(({ keyword }) =>
@@ -1296,7 +1304,8 @@ export class AdminService {
     const notFound: string[] = [];
     for (const code of codes) {
       const found = canBoList.find(
-        (cb) => cb.cbCode === code || cb.userAD === code || cb.username === code,
+        (cb) =>
+          cb.cbCode === code || cb.userAD === code || cb.username === code,
       );
       if (found) matchedIds.add(found.id);
       else notFound.push(code);
@@ -1331,7 +1340,9 @@ export class AdminService {
             },
           },
         },
-        quizVersion: { include: { quiz: { select: { id: true, title: true } } } },
+        quizVersion: {
+          include: { quiz: { select: { id: true, title: true } } },
+        },
       },
       orderBy: { submittedAt: 'desc' },
     });

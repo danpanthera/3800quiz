@@ -44,6 +44,12 @@ services:
       - "15174:80"  # dải port riêng cho 3800quiz trên máy dev
     depends_on:
       - api
+    volumes:
+      # Audio giọng đọc thuyết minh — sinh bằng `npm run giong-doc` (apps/api/
+      # scripts/sinh-giong-doc.ts), nằm NGOÀI git (~300MB+, tái sinh được từ DB).
+      # Chỉ đọc: container không tự viết vào đây. Đổi/thêm audio KHÔNG cần build
+      # lại image hay restart container — nginx phục vụ file mới ngay lập tức.
+      - ./assets/giong-doc:/usr/share/nginx/html/giong-doc:ro
 
 volumes:
   postgres_data:

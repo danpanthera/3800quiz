@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Alert, Skeleton, Space, Tag, Typography } from 'antd'
-import { EyeOutlined } from '@ant-design/icons'
+import { Alert, Skeleton, Space, Switch, Tag, Typography } from 'antd'
+import { AudioMutedOutlined, AudioOutlined, EyeOutlined } from '@ant-design/icons'
 import type { Socket } from 'socket.io-client'
 import api, { getErrorMessage } from '../lib/api'
 import { createArenaSocket } from '../lib/arena-socket'
@@ -10,6 +10,15 @@ import { useArenaCountdown } from '../hooks/useArenaCountdown'
 import { ArenaCountdownRing } from '../components/ArenaCountdownRing'
 import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
 import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
+import {
+  baoDangDoc,
+  dangBatGiongDoc,
+  datGiongDoc,
+  docLanLuot,
+  dungGiongDoc,
+  moiGiongDoc,
+  theoDoiGiongDocONoiKhac,
+} from '../lib/giong-doc'
 import type {
   ArenaStatePayload,
   ArenaQuestionPayload,
@@ -39,6 +48,19 @@ export default function ArenaSpectatorPage() {
   const [socket, setSocket] = useState<Socket | null>(null)
   const socketRef = useRef<Socket | null>(null)
   const getServerNow = useServerClock(socket)
+
+  // Đây là màn "trình chiếu" — nơi ĐÚNG NHẤT để bật giọng đọc (1 nguồn, qua loa
+  // hội trường), khác với máy MC hay máy người chơi (xem TinhNang.md). Mặc định
+  // TẮT; đọc qua ref vì handler socket đăng ký 1 lần trong effect [joinCode],
+  // đọc thẳng state đóng băng sẽ bị "cũ" nếu người dùng đổi công tắc giữa chừng.
+  const [narrationOn, setNarrationOn] = useState(() => dangBatGiongDoc('arena-spectator'))
+  const narrationOnRef = useRef(narrationOn)
+  useEffect(() => {
+    narrationOnRef.current = narrationOn
+  }, [narrationOn])
+  // localStorage nhớ công tắc ĐANG bật từ phiên trước, nhưng mỗi lần tải trang
+  // mới trình duyệt CHƯA được "mồi" quyền autoplay — phải hiện lớp phủ xin bấm.
+  const [daMoiAutoplay, setDaMoiAutoplay] = useState(false)
   const countdown = useArenaCountdown(
     currentQuestion?.deadlineAtMs ?? null,
     currentQuestion?.startedAtMs ?? null,
@@ -72,19 +94,34 @@ export default function ArenaSpectatorPage() {
         setPrepare(p)
         setCurrentQuestion(null)
         setLastReveal(null)
+        dungGiongDoc()
+        if (narrationOnRef.current) {
+          void docLanLuot(['Lĩnh vực', p.subjectName ?? 'Chưa phân loại'], {
+            maxMs: Math.max(0, p.prepareSec * 1000 - 300),
+          })
+        }
       })
       sock.on('arena.question', (q: ArenaQuestionPayload) => {
         setPrepare(null)
         setCurrentQuestion(q)
         setLastReveal(null)
+        dungGiongDoc()
+        // Đấu trường CHỈ đọc đề bài, không đọc đáp án (đã hiện to trên màn hình,
+        // và mỗi câu chỉ có ~20s — đọc thêm 4 đáp án dễ vượt quá thời gian).
+        if (narrationOnRef.current) {
+          void docLanLuot([q.question.content], { maxMs: q.deadlineAtMs - q.serverNowMs - 2000 })
+        }
       })
+      sock.on('arena.locked', () => dungGiongDoc())
       sock.on('arena.revealed', (r: ArenaRevealPayload) => {
         setLastReveal(r)
         setTeams(r.leaderboard)
+        dungGiongDoc()
       })
       sock.on('arena.ended', (e: ArenaEndPayload) => {
         setFinal(e)
         setTeams(e.ranking)
+        dungGiongDoc()
       })
     }).catch((e) => setError(getErrorMessage(e, 'Không tìm thấy phiên đấu trường')))
 
@@ -92,17 +129,76 @@ export default function ArenaSpectatorPage() {
       cancelled = true
       socketRef.current?.disconnect()
       socketRef.current = null
+      dungGiongDoc()
     }
   }, [joinCode])
+
+  // Máy MC hoặc chính trang này mở ở tab khác trên CÙNG máy cũng đang đọc —
+  // tự tắt công tắc của mình, tránh 2 nguồn tiếng chồng nhau qua 1 loa.
+  useEffect(() => {
+    return theoDoiGiongDocONoiKhac((phamVi) => {
+      if (phamVi !== 'arena-spectator' && narrationOnRef.current) {
+        dungGiongDoc()
+        setNarrationOn(false)
+        datGiongDoc('arena-spectator', false)
+      }
+    })
+  }, [])
+
+  const toggleNarration = () => {
+    setNarrationOn((on) => {
+      const next = !on
+      if (next) {
+        // Bắt buộc gọi TRONG handler click — chỉ cử chỉ bấm tay mới mở khoá
+        // được quyền autoplay cho các lần phát bằng code về sau.
+        moiGiongDoc()
+        setDaMoiAutoplay(true)
+        baoDangDoc('arena-spectator')
+      } else {
+        dungGiongDoc()
+      }
+      datGiongDoc('arena-spectator', next)
+      return next
+    })
+  }
 
   if (error) return <Alert type="error" message={error} showIcon style={{ margin: 24 }} />
   if (!sessionInfo) return <Skeleton active style={{ padding: 24 }} />
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
-      <Space style={{ marginBottom: 16 }}>
+    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto', position: 'relative' }}>
+      {narrationOn && !daMoiAutoplay && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            moiGiongDoc()
+            setDaMoiAutoplay(true)
+          }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000, cursor: 'pointer',
+            background: 'rgba(0, 0, 0, 0.72)', color: '#fff',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+          }}
+        >
+          <AudioOutlined style={{ fontSize: 48 }} />
+          <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>Bấm để bật giọng đọc</Typography.Title>
+          <Text style={{ color: 'rgba(255,255,255,0.75)' }}>
+            Trình duyệt chỉ cho phát âm thanh sau khi có 1 lượt bấm trên trang
+          </Text>
+        </div>
+      )}
+      <Space style={{ marginBottom: 16 }} wrap>
         <Tag icon={<EyeOutlined />} color="blue">Khán giả</Tag>
         <Title level={3} style={{ margin: 0 }}>{sessionInfo.name}</Title>
+        <span title={narrationOn ? 'Tắt giọng đọc' : 'Bật giọng đọc đề bài (chỉ nên bật ở MỘT máy — máy nối loa)'}>
+          <Switch
+            checked={narrationOn}
+            onChange={toggleNarration}
+            checkedChildren={<AudioOutlined />}
+            unCheckedChildren={<AudioMutedOutlined />}
+          />
+        </span>
       </Space>
       <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>Bộ đề: {sessionInfo.quizTitle}</Text>
 

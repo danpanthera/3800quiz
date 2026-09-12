@@ -37,3 +37,9 @@ apps/api/prisma/migrations/dev.db
 # địa chỉ, số tài khoản... của cán bộ) — tuyệt đối không đưa lên git
 apps/web/Mau/**/gahr26*
 apps/web/Mau/**/GAHR26*
+
+# Audio giọng đọc thuyết minh — sinh bằng `npm run giong-doc` (apps/api/scripts/
+# sinh-giong-doc.ts), có thể tái sinh lại từ DB bất cứ lúc nào nên KHÔNG cần
+# theo dõi bằng git (~300MB+ toàn kho). Đưa lên PROD bằng cách chép thư mục qua
+# USB, không phải "git pull" — xem DEPLOYMENT.md, Phụ lục E.
+/assets/giong-doc/

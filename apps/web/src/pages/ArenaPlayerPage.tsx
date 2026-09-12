@@ -300,18 +300,22 @@ export default function ArenaPlayerPage() {
 
   function toggleOption(optionId: string, questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING') {
     if (hasAnswered || locked) return
-    setSelected((prev) => {
-      if (questionType === 'SINGLE') return prev[0] === optionId ? [] : [optionId]
-      return prev.includes(optionId) ? prev.filter((id) => id !== optionId) : [...prev, optionId]
-    })
+    if (questionType === 'SINGLE') {
+      // Câu 1 đáp án: chọn là chốt luôn, gửi ngay không cần bấm thêm nút "Gửi đáp án"
+      setSelected([optionId])
+      submitAnswer([optionId])
+      return
+    }
+    setSelected((prev) => (prev.includes(optionId) ? prev.filter((id) => id !== optionId) : [...prev, optionId]))
   }
 
-  function submitAnswer() {
-    if (!currentQuestion || selected.length === 0 || !myTeamIdRef.current || locked) return
+  function submitAnswer(overrideSelected?: string[]) {
+    const finalSelected = overrideSelected ?? selected
+    if (!currentQuestion || finalSelected.length === 0 || !myTeamIdRef.current || locked) return
     setHasAnswered(true)
     socketRef.current?.emit(
       'arena.answer',
-      { arenaRoundId: currentQuestion.roundId, selectedOptionIds: selected },
+      { arenaRoundId: currentQuestion.roundId, selectedOptionIds: finalSelected },
       (res: { ok?: boolean; responseMs?: number; error?: string }) => {
         if (res?.ok && res.responseMs != null) setMyResponseMs(res.responseMs)
         if (!res?.ok) setHasAnswered(false)
@@ -546,11 +550,11 @@ export default function ArenaPlayerPage() {
             })}
           </Space>
 
-          {!hasAnswered && !isRevealed && !locked && (
+          {!hasAnswered && !isRevealed && !locked && currentQuestion.question.questionType !== 'SINGLE' && (
             <Button
               type="primary" size="large" block style={{ marginTop: 18 }}
               disabled={selected.length === 0}
-              onClick={submitAnswer}
+              onClick={() => submitAnswer()}
             >
               Gửi đáp án
             </Button>

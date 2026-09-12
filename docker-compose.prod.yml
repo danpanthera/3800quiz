@@ -143,6 +143,12 @@ services:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       - api
+    volumes:
+      # Audio giọng đọc thuyết minh — KHÔNG đi theo "git pull" (ngoài git, xem
+      # .gitignore) mà chép qua USB vào đúng đường dẫn này trên máy chủ PROD
+      # (DEPLOYMENT.md, Phụ lục E). Chỉ đọc; đổi/thêm audio không cần build lại
+      # image hay restart container — nginx phục vụ file mới ngay lập tức.
+      - ./assets/giong-doc:/usr/share/nginx/html/giong-doc:ro
     healthcheck:
       test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/index.html']
       interval: 30s

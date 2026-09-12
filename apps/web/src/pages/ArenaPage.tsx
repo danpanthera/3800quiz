@@ -10,7 +10,7 @@ import {
   ArrowRightOutlined, StopOutlined, CopyOutlined, ReloadOutlined,
   DeleteOutlined, LockOutlined, SafetyOutlined, UserDeleteOutlined,
   UsergroupAddOutlined, MailOutlined, PlusOutlined, SwapOutlined,
-  MinusCircleOutlined,
+  MinusCircleOutlined, AudioOutlined, AudioMutedOutlined, DesktopOutlined,
 } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import type { Socket } from 'socket.io-client'
@@ -24,6 +24,15 @@ import { ArenaBuzzStrip } from '../components/ArenaBuzzStrip'
 import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
 import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
 import { fireGoldSparkle, playFastestSound } from '../lib/feedback-fx'
+import {
+  baoDangDoc,
+  dangBatGiongDoc,
+  datGiongDoc,
+  docLanLuot,
+  dungGiongDoc,
+  moiGiongDoc,
+  theoDoiGiongDocONoiKhac,
+} from '../lib/giong-doc'
 import type {
   ArenaTeam, ArenaQuestionPayload, ArenaPreparePayload, ArenaBuzzPayload,
   ArenaRevealPayload, ArenaLeaderboardRow, ArenaStatePayload,
@@ -98,6 +107,63 @@ export default function ArenaPage() {
       setView('game')
     }
   }, [])
+
+  // ─── Giọng đọc thuyết minh (chỉ đọc đề bài, không đọc đáp án) ──────────────
+  // CỐ Ý không đụng vào connectSocket() bên dưới — 2 effect này chỉ QUAN SÁT
+  // state đã có sẵn (prepare/currentQuestion/locked/revealData), không thêm
+  // handler socket mới, để không tăng rủi ro hồi quy cho phần realtime.
+  const [narrationOn, setNarrationOn] = useState(() => dangBatGiongDoc('arena-host'))
+  const narrationOnRef = useRef(narrationOn)
+  useEffect(() => {
+    narrationOnRef.current = narrationOn
+  }, [narrationOn])
+
+  const toggleNarration = (next: boolean) => {
+    setNarrationOn(next)
+    if (next) {
+      moiGiongDoc() // bắt buộc gọi trong handler click để mở khoá autoplay
+      baoDangDoc('arena-host')
+    } else {
+      dungGiongDoc()
+    }
+    datGiongDoc('arena-host', next)
+  }
+
+  // Máy trình chiếu (hoặc chính máy MC mở 2 tab) đang đọc — tự tắt của mình,
+  // tránh 2 nguồn tiếng cùng lúc trong 1 phòng.
+  useEffect(() => {
+    return theoDoiGiongDocONoiKhac((phamVi) => {
+      if (phamVi !== 'arena-host' && narrationOnRef.current) {
+        dungGiongDoc()
+        setNarrationOn(false)
+        datGiongDoc('arena-host', false)
+      }
+    })
+  }, [])
+
+  // Bắt đầu đọc khi chuyển pha chuẩn bị / câu hỏi mới.
+  useEffect(() => {
+    if (!narrationOn) return
+    if (prepare) {
+      void docLanLuot(['Lĩnh vực', prepare.subjectName ?? 'Chưa phân loại'], {
+        maxMs: Math.max(0, prepare.prepareSec * 1000 - 300),
+      })
+    } else if (currentQuestion) {
+      void docLanLuot([currentQuestion.question.content], {
+        maxMs: currentQuestion.deadlineAtMs - currentQuestion.serverNowMs - 2000,
+      })
+    }
+    return () => dungGiongDoc()
+  }, [prepare, currentQuestion, narrationOn])
+
+  // Dừng ngay khi khoá câu (hết giờ) hoặc công bố đáp án — không để tiếng đọc
+  // đè lên lúc chốt điểm.
+  useEffect(() => {
+    if (locked || revealData) dungGiongDoc()
+  }, [locked, revealData])
+
+  // Dừng hẳn khi rời màn hình.
+  useEffect(() => () => dungGiongDoc(), [])
 
   // ─── Hàm hỗ trợ Socket ──────────────────────────────────────────────────────
 
@@ -215,6 +281,7 @@ export default function ArenaPage() {
       session={session!} leaderboard={leaderboard} currentQuestion={currentQuestion}
       buzzes={buzzes} locked={locked} revealData={revealData} countdown={countdown}
       prepare={prepare}
+      narrationOn={narrationOn} onToggleNarration={toggleNarration}
       onReveal={emitReveal} onNext={emitNext} onEnd={emitEnd}
     />
   )
@@ -600,7 +667,7 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
         <Form.Item
           name="questionDurationSec"
           label="Thời gian trả lời mỗi câu"
-          extra="Áp dụng cho CẢ hai chế độ — máy chủ tự khoá nhận đáp án và tự công bố khi hết giờ, MC vẫn công bố sớm được."
+          extra="Áp dụng cho CẢ hai chế độ — máy chủ tự khoá nhận đáp án và tự công bố khi hết giờ, MC vẫn công bố sớm được. Nếu bật giọng đọc thuyết minh, nên đặt ≥ 30 giây — đọc riêng đề bài trung bình ~9 giây, câu dài nhất từng gặp ~46 giây."
         >
           <InputNumber min={5} max={300} style={{ width: 140 }} addonAfter="giây" />
         </Form.Item>
@@ -738,7 +805,16 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
             </div>
             <QRCodeSVG value={joinUrl} size={180} />
             <div style={{ marginTop: 12 }}>
-              <Button icon={<CopyOutlined />} onClick={copyCode} size="small">Sao chép mã</Button>
+              <Space>
+                <Button icon={<CopyOutlined />} onClick={copyCode} size="small">Sao chép mã</Button>
+                <Button
+                  icon={<DesktopOutlined />}
+                  size="small"
+                  onClick={() => window.open(`${window.location.origin}/arena/spectate/${session.joinCode}`, '_blank')}
+                >
+                  Mở màn trình chiếu
+                </Button>
+              </Space>
             </div>
             <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>{joinUrl}</Text>
           </div>
@@ -929,12 +1005,13 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
 
 function GameControl({
   session, leaderboard, currentQuestion, buzzes, locked, revealData, countdown,
-  prepare, onReveal, onNext, onEnd,
+  prepare, narrationOn, onToggleNarration, onReveal, onNext, onEnd,
 }: {
   session: ArenaSession; leaderboard: ArenaLeaderboardRow[]; currentQuestion: ArenaQuestionPayload | null
   buzzes: ArenaBuzzPayload[]; locked: boolean; revealData: ArenaRevealPayload | null
   countdown: ReturnType<typeof useArenaCountdown>
   prepare: ArenaPreparePayload | null
+  narrationOn: boolean; onToggleNarration: (next: boolean) => void
   onReveal: () => void; onNext: () => void; onEnd: () => void
 }) {
   const isManual = session.hostMode === 'MANUAL'
@@ -957,6 +1034,15 @@ function GameControl({
           }
           extra={
             <Space>
+              <span title={narrationOn ? 'Tắt đọc đề' : 'Đọc đề bài — CHỈ bật ở MỘT máy trong phòng (máy nối loa). Nếu màn trình chiếu đã bật thì tắt ở đây.'}>
+                <Switch
+                  size="small"
+                  checked={narrationOn}
+                  onChange={onToggleNarration}
+                  checkedChildren={<AudioOutlined />}
+                  unCheckedChildren={<AudioMutedOutlined />}
+                />
+              </span>
               {/* Server làm chủ deadline ở CẢ HAI chế độ — MC luôn công bố sớm được,
                   không chỉ riêng MANUAL. Ở AUTO, không bấm thì máy chủ tự công bố khi hết giờ. */}
               {!isRevealed && !prepare && currentQuestion && (
