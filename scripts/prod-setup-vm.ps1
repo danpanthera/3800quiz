@@ -2,6 +2,10 @@
 # 3800Quiz — Dựng máy ảo Ubuntu qua Hyper-V NGAY TRÊN MÁY CHỦ PROD
 # (dùng khi PROD đang được cắm Internet tạm thời — xem DEPLOYMENT.md Giai đoạn 2)
 #
+# PROD 3800quiz hiện là Windows 11 Pro (không phải Windows Server) — script tự
+# nhận diện và bật Hyper-V đúng cách cho từng loại (xem bước 1 bên dưới), không
+# cần chỉnh gì thêm. Windows Home KHÔNG hỗ trợ Hyper-V.
+#
 # Script này tự động hoá mọi việc làm được từ PowerShell: bật Hyper-V, chuẩn bị
 # ISO Ubuntu, tạo Virtual Switch, tạo máy ảo, khởi động máy ảo. Việc CÀI ĐẶT
 # Ubuntu (màn hình cài đặt tương tác) KHÔNG tự động hoá được — vẫn phải làm tay
@@ -44,10 +48,30 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 }
 
 # ── 1. Bật Hyper-V nếu chưa có ──────────────────────────────────────────────
-$hyperv = Get-WindowsFeature -Name Hyper-V
-if (-not $hyperv.Installed) {
-    Ghi 'Đang bật vai trò Hyper-V — máy sẽ cần khởi động lại...'
-    Install-WindowsFeature -Name Hyper-V -IncludeManagementTools -Restart
+# Tương thích cả Windows Server (module ServerManager) lẫn Windows 10/11
+# Pro/Enterprise/Education (Hyper-V dạng Windows Optional Feature) — bản Home
+# không có Hyper-V nên sẽ báo lỗi rõ ràng thay vì lỗi cmdlet khó hiểu.
+$isWindowsServer = [bool](Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue)
+
+if ($isWindowsServer) {
+    $hyperv  = Get-WindowsFeature -Name Hyper-V
+    $hypervOn = $hyperv.Installed
+} else {
+    $hyperv = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -ErrorAction SilentlyContinue
+    if (-not $hyperv) {
+        throw 'Máy này không hỗ trợ Hyper-V (thường do đang chạy bản Windows Home, hoặc ảo hoá CPU/VT-x chưa bật trong BIOS/UEFI). Cần Windows Server, hoặc Windows 10/11 Pro/Enterprise/Education trở lên.'
+    }
+    $hypervOn = ($hyperv.State -eq 'Enabled')
+}
+
+if (-not $hypervOn) {
+    Ghi 'Đang bật Hyper-V — máy sẽ cần khởi động lại...'
+    if ($isWindowsServer) {
+        Install-WindowsFeature -Name Hyper-V -IncludeManagementTools -Restart
+    } else {
+        Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All -NoRestart | Out-Null
+        Restart-Computer -Force
+    }
     Ghi 'Đã yêu cầu khởi động lại. Sau khi máy lên lại, CHẠY LẠI đúng lệnh này để tiếp tục.'
     exit 0
 }
@@ -112,7 +136,9 @@ if ($existing) {
     $dvd = Add-VMDvdDrive -VMName $VmName -Path $IsoPath -Passthru
     Set-VMBios -VMName $VmName -StartupOrder @('CD', 'IDE', 'LegacyNetworkAdapter', 'Floppy')
 
-    # Tự khởi động lại cùng Windows Server (không cần ai đăng nhập)
+    # Tự khởi động lại cùng Windows (không cần ai đăng nhập) — dịch vụ quản lý
+    # Hyper-V (vmms) chạy nền dạng SYSTEM service, giống nhau trên cả Windows
+    # Server lẫn Windows 10/11 Pro/Enterprise
     Set-VM -Name $VmName -AutomaticStartAction Start -AutomaticStartDelay 30
 
     Ghi 'Đã tạo xong máy ảo.'

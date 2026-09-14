@@ -1,8 +1,8 @@
 # 3800Quiz — Lộ trình triển khai Production (từ A đến Z)
 
-Tài liệu này dẫn **từng bước một, theo đúng thứ tự**, để đưa 3800Quiz từ máy dev lên một máy chủ **Windows Server** thật, cài đặt **trực tiếp trên chính máy chủ đó** bằng cách kết nối Internet **tạm thời** trong buổi cài đặt, sau đó ngắt hẳn để vận hành hoàn toàn trong **mạng nội bộ ngân hàng**, phục vụ toàn bộ 7 chi nhánh. Làm tuần tự từ Giai đoạn 0, đánh dấu ô checklist khi xong mỗi bước.
+Tài liệu này dẫn **từng bước một, theo đúng thứ tự**, để đưa 3800Quiz từ máy dev lên một máy chủ **Windows** thật, cài đặt **trực tiếp trên chính máy chủ đó** bằng cách kết nối Internet **tạm thời** trong buổi cài đặt, sau đó ngắt hẳn để vận hành hoàn toàn trong **mạng nội bộ ngân hàng**, phục vụ toàn bộ 7 chi nhánh. Làm tuần tự từ Giai đoạn 0, đánh dấu ô checklist khi xong mỗi bước.
 
-> **Phạm vi**: **Windows Server 2016 trở lên** (2016/2019/2022 đều dùng được — mọi lệnh trong tài liệu này tương thích cả 3 bản). Máy chủ chỉ có Internet **đúng trong buổi cài đặt ban đầu** (Giai đoạn 2) và mỗi lần cập nhật phiên bản sau này (Phụ lục A) — ngoài hai thời điểm đó, **không có Internet**. Không cần máy chuẩn bị riêng — mọi thứ dựng thẳng trên máy chủ.
+> **Phạm vi**: PROD 3800quiz hiện dùng **Windows 11 Pro** (Hyper-V dạng Windows Optional Feature — xem 0.2). Tài liệu vẫn dùng được nguyên vẹn trên **Windows Server 2016 trở lên** nếu triển khai ở máy chủ khác dùng Server (`prod-setup-vm.ps1` tự nhận diện đúng loại Windows và bật Hyper-V tương ứng). **Windows Home không hỗ trợ Hyper-V, không dùng được.** Máy chủ chỉ có Internet **đúng trong buổi cài đặt ban đầu** (Giai đoạn 2) và mỗi lần cập nhật phiên bản sau này (Phụ lục A) — ngoài hai thời điểm đó, **không có Internet**. Không cần máy chuẩn bị riêng — mọi thứ dựng thẳng trên máy chủ.
 
 ---
 
@@ -25,8 +25,8 @@ Tài liệu này dẫn **từng bước một, theo đúng thứ tự**, để �
                     quiz3800_db (PostgreSQL, không mở ra ngoài)
 
  Toàn bộ 4 container trên chạy bằng Docker BÊN TRONG một máy ảo Ubuntu, máy
- ảo này chạy trên vai trò Hyper-V của Windows Server — cùng một máy chủ vật lý,
- không có máy trung gian nào khác.
+ ảo này chạy trên tính năng Hyper-V của Windows (PROD 3800quiz: Windows 11 Pro)
+ — cùng một máy chủ vật lý, không có máy trung gian nào khác.
 ```
 
 **Caddy là cửa duy nhất** nhận traffic trong mạng nội bộ — không cần cài Nginx, Certbot hay IIS trên Windows.
@@ -35,12 +35,12 @@ Tài liệu này dẫn **từng bước một, theo đúng thứ tự**, để �
 
 ### 0.2. Vì sao Hyper-V + máy ảo Ubuntu, không phải Docker Desktop hay "Docker cho Windows"
 
-Đã chốt dùng: **Windows Server (vai trò Hyper-V) chạy một máy ảo Ubuntu, Docker Engine (container Linux) cài trong máy ảo đó.** Hai lý do loại các phương án khác:
+Đã chốt dùng: **Hyper-V (tính năng có sẵn trên Windows) chạy một máy ảo Ubuntu, Docker Engine (container Linux) cài trong máy ảo đó.** PROD 3800quiz là **Windows 11 Pro** nên dùng Hyper-V dạng Windows Optional Feature (khác Windows Server dùng dạng "Server Role", nhưng cùng một hypervisor, script tự nhận diện — xem Giai đoạn 1). Hai lý do loại các phương án khác:
 
 - **"Docker cho Windows" kiểu container Windows (native)**: Postgres **không có** bản image Windows container chính thức. Muốn chạy kiểu này phải viết lại toàn bộ Dockerfile bằng base Windows và bỏ hẳn Postgres container — phá vỡ toàn bộ cách đóng gói hiện tại.
-- **Docker Desktop cài thẳng lên Windows (dùng WSL2)**: WSL2 chỉ ổn định từ Windows Server 2019/2022 trở lên, **không có trên Server 2016** — dùng cách này sẽ mất khả năng chạy trên 2016. Docker Desktop cũng cần **giấy phép trả phí** với tổ chức lớn, và mặc định không tự khởi động lại sau khi máy chủ reboot cho tới khi có người đăng nhập — rủi ro thật nếu máy tự khởi động lại lúc nửa đêm.
+- **Docker Desktop cài thẳng lên Windows (dùng WSL2)**: cần **giấy phép trả phí** với tổ chức lớn như ngân hàng, và mặc định không tự khởi động lại sau khi máy chủ reboot cho tới khi có người đăng nhập — rủi ro thật nếu máy tự khởi động lại lúc nửa đêm (đúng kịch bản hay gặp khi Windows Update tự reboot).
 
-Hyper-V có từ Windows Server 2012, là hypervisor gốc (không phải ảo hoá lồng nhau) nên tương thích xuyên suốt 2016 → 2022, miễn phí hoàn toàn, và Docker trong Ubuntu tự khởi động cùng máy nhờ `systemd`, không cần ai đăng nhập.
+Hyper-V là hypervisor gốc (không phải ảo hoá lồng nhau), có mặt trên cả Windows Server (từ 2012) lẫn Windows 10/11 Pro/Enterprise/Education (từ Windows 8) — Windows Home không có. Miễn phí hoàn toàn, và Docker trong Ubuntu tự khởi động cùng máy nhờ `systemd`, không cần ai đăng nhập — dịch vụ quản lý Hyper-V (`vmms`) chạy nền dạng SYSTEM service giống hệt nhau trên cả hai loại Windows.
 
 ### 0.3. Vì sao cài trực tiếp trên PROD bằng cách nối Internet tạm thời
 
@@ -71,12 +71,12 @@ Kiến trúc hiện tại đã có sẵn các lớp bảo vệ sau, không cần
 Checklist bổ sung cần làm khi go-live:
 - [ ] Đổi mật khẩu `admin` mặc định ngay sau lần đăng nhập đầu (Giai đoạn 6).
 - [ ] Sao lưu **mã hoá GPG**, lưu trong mạng nội bộ ngân hàng — không đẩy ra kho lưu trữ đám mây (máy chủ này không có Internet nên không dùng được, nhưng nhắc lại để không ai vô tình đổi sang cloud sau này).
-- [ ] SSH/RDP quản trị Windows Server: hạn chế IP được phép truy cập, đổi mật khẩu quản trị mặc định.
+- [ ] SSH/RDP quản trị Windows: hạn chế IP được phép truy cập, đổi mật khẩu quản trị mặc định.
 - [ ] Cài `fail2ban` hoặc tương đương trong máy ảo Ubuntu nếu có mở SSH ra ngoài phạm vi máy chủ (lớp chống brute-force bổ sung ở tầng OS, độc lập với rate-limit ở tầng ứng dụng).
 
 ### 0.5. Checklist chuẩn bị trước khi bắt tay vào làm
 
-- [ ] Máy chủ Windows Server 2016 trở lên: tối thiểu **4 vCPU / 8GB RAM / 80GB ổ đĩa (ưu tiên SSD)** dành riêng cho máy ảo, cộng thêm phần cho bản thân Windows — tổng máy chủ nên có **6–8 vCPU / 16GB RAM** (mức này đã tính dư cho ~200 người dùng, kể cả kịch bản toàn bộ cùng vào thi một lúc)
+- [ ] Máy chủ Windows 11 Pro (hoặc Windows Server 2016 trở lên nếu dùng máy chủ khác): tối thiểu **4 vCPU / 8GB RAM / 80GB ổ đĩa (ưu tiên SSD)** dành riêng cho máy ảo, cộng thêm phần cho bản thân Windows — tổng máy chủ nên có **6–8 vCPU / 16GB RAM** (mức này đã tính dư cho ~200 người dùng, kể cả kịch bản toàn bộ cùng vào thi một lúc)
 - [ ] Ổ `D:` còn ít nhất **80GB trống** — toàn bộ tài liệu này dùng `D:\quiz\` làm thư mục gốc phía Windows (mã nguồn, ISO, máy ảo). Nếu máy chủ chỉ có ổ `C:` hoặc muốn dùng đường dẫn khác, đổi qua tham số `-VmPath` khi chạy `prod-setup-vm.ps1` (Giai đoạn 2.2) và thay `D:\quiz\` bằng đường dẫn đó ở mọi bước còn lại
 - [ ] Một nguồn Internet tạm thời có thể cắm được vào máy chủ (dây mạng công ty nối tạm ra ngoài, router/modem/hotspot có cổng Ethernet) — đã xác nhận với bộ phận an ninh thông tin về việc tạm thời kết nối máy chủ này ra Internet
 - [ ] Biết máy chủ có mấy card mạng vật lý — nếu có từ 2 trở lên, dùng riêng 1 card cho Internet tạm thời để khỏi phải rút/cắm dây mạng nội bộ
@@ -113,6 +113,8 @@ Mỗi lần **cập nhật phiên bản mới** sau này lặp lại đúng ki�
 Get-ComputerInfo | Select-Object OsName, OsVersion, OsHardwareAbstractionLayer
 ```
 
+PROD 3800quiz đang dùng **Windows 11 Pro** — `OsName` phải hiện đúng "Microsoft Windows 11 Pro" (không phải "...Home", bản Home không có Hyper-V nên không dùng được). Nếu triển khai trên máy chủ khác dùng Windows Server 2016 trở lên thì mọi bước còn lại của tài liệu vẫn áp dụng nguyên vẹn — `prod-setup-vm.ps1` tự nhận diện đúng loại Windows và bật Hyper-V tương ứng (Giai đoạn 2.2).
+
 ### 1.2. Đồng bộ đồng hồ hệ thống
 
 Đồng hồ sai làm JWT bị từ chối sớm và khiến việc xác thực chứng chỉ HTTPS thất bại.
@@ -145,7 +147,7 @@ Nếu máy có cài antivirus/EDR của ngân hàng, đề nghị bộ phận an
 `D:\quiz\` — thư mục gốc phía Windows dùng xuyên suốt tài liệu này (mã nguồn, ISO, máy ảo đều nằm chung ở đây, xem 2.2).
 
 ### ✅ Checklist Giai đoạn 1
-- [ ] Xác nhận phiên bản Windows (2016 trở lên)
+- [ ] Xác nhận đang chạy Windows 11 Pro (không phải Home)
 - [ ] Đồng hồ hệ thống đúng
 - [ ] Đã tắt Sleep/Hibernate
 - [ ] Đã cấu hình Active Hours
@@ -187,7 +189,7 @@ Thư mục gốc phía Windows dùng xuyên suốt tài liệu này là `D:\quiz
   File nằm phẳng ngay trong `D:\quiz\` (không có thư mục con `scripts\`) — bỏ `\scripts` ở lệnh `Set-Location` bên dưới.
 - **Nếu tiện dùng Git for Windows** — clone thẳng toàn bộ repo (khớp đúng cấu trúc mã nguồn, có luôn thư mục `scripts\`):
   ```powershell
-  git clone <đường-dẫn-repo-thật>.git D:\quiz
+  git clone https://github.com/danpanthera/3800quiz.git D:\quiz
   ```
 
 > Việc `git clone` **bắt buộc** để ứng dụng chạy được (Docker, database...) không nằm ở bước này — nó diễn ra tự động bên trong máy ảo Ubuntu ở Giai đoạn 2.3, script ở đó tự cài Git và tự clone. Hai cách ở trên chỉ để có đúng 1 file `prod-setup-vm.ps1` chạy được ngay trên Windows.
@@ -207,20 +209,20 @@ Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, ch�
 
 ### 2.3. Cài Ubuntu (làm tay) rồi chạy script ứng dụng
 
-> ⚠️ **Gõ qua nhiều lớp remote (VD macOS "Windows App" → RDP vào Windows Server → cửa sổ Connect của Hyper-V vào máy ảo) dễ bị rớt/lẫn ký tự** — gõ nhanh có khi chỉ còn lại vài ký tự ngẫu nhiên trong ô. Ở mọi ô nhập liệu bên dưới (tên máy, username, password): gõ **chậm**, nhìn lại đúng chữ hiện trên màn hình trước khi qua ô tiếp theo; **không dùng copy-paste** (cửa sổ Connect cơ bản của Hyper-V không hỗ trợ dán clipboard vào máy ảo). Nếu ô đang có sẵn ký tự lạ do gõ hụt, xoá trắng hẳn (`Ctrl+A` rồi `Backspace`) trước khi gõ lại, đừng gõ đè lên.
+> ⚠️ **Gõ qua nhiều lớp remote (VD macOS "Windows App" → RDP vào Windows → cửa sổ Connect của Hyper-V vào máy ảo) dễ bị rớt/lẫn ký tự** — gõ nhanh có khi chỉ còn lại vài ký tự ngẫu nhiên trong ô. Ở mọi ô nhập liệu bên dưới (tên máy, username, password): gõ **chậm**, nhìn lại đúng chữ hiện trên màn hình trước khi qua ô tiếp theo; **không dùng copy-paste** (cửa sổ Connect cơ bản của Hyper-V không hỗ trợ dán clipboard vào máy ảo). Nếu ô đang có sẵn ký tự lạ do gõ hụt, xoá trắng hẳn (`Ctrl+A` rồi `Backspace`) trước khi gõ lại, đừng gõ đè lên.
 
 1. Hyper-V Manager → chuột phải `quiz3800-host` → **Connect...** → cài Ubuntu Server như bình thường: đặt tên máy `quiz3800-host`, tạo user quản trị (nhớ kỹ mật khẩu). Ở màn hình chọn gói cài đặt, **tick sẵn "Install OpenSSH Server"**.
 2. Sau khi cài xong và đăng nhập, tải mã nguồn về ngay trong Ubuntu (đang có Internet) rồi chạy script:
    ```bash
    sudo apt-get update && sudo apt-get install -y git
-   git clone <đường-dẫn-repo-thật>/3800quiz.git /tmp/3800quiz-scripts
-   bash /tmp/3800quiz-scripts/scripts/prod-setup-app.sh <đường-dẫn-repo-thật>/3800quiz.git
+   git clone https://github.com/danpanthera/3800quiz.git /tmp/3800quiz-scripts
+   bash /tmp/3800quiz-scripts/scripts/prod-setup-app.sh https://github.com/danpanthera/3800quiz.git
    ```
 
 > ⚠️ **Nếu repo là private trên GitHub**: `git clone` sẽ hỏi Username/Password — GitHub đã bỏ đăng nhập bằng **mật khẩu tài khoản** cho Git qua HTTPS từ 2021, gõ mật khẩu thật vào sẽ báo lỗi `Invalid username or token. Password authentication is not supported`. Phải dùng **Personal Access Token (PAT)** thay cho mật khẩu: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → tạo token chỉ cho đúng repo này, quyền Contents: Read-only, hạn dùng ngắn (VD 7 ngày). Cách nhanh nhất là nhúng thẳng token vào URL để khỏi bị hỏi lại — thay cả 2 lệnh `git clone`/`prod-setup-app.sh` ở trên bằng:
 > ```bash
-> git clone https://<TOKEN>@github.com/<đường-dẫn-repo-thật>/3800quiz.git /tmp/3800quiz-scripts
-> bash /tmp/3800quiz-scripts/scripts/prod-setup-app.sh https://<TOKEN>@github.com/<đường-dẫn-repo-thật>/3800quiz.git
+> git clone https://<TOKEN>@github.com/danpanthera/3800quiz.git /tmp/3800quiz-scripts
+> bash /tmp/3800quiz-scripts/scripts/prod-setup-app.sh https://<TOKEN>@github.com/danpanthera/3800quiz.git
 > ```
 > Lưu ý: URL có token sẽ được lưu lại làm `origin` trong `/opt/3800quiz/.git/config` — sau khi cài xong nên coi token đó là **đã dùng xong, huỷ trên GitHub** (mục "Danger zone" của token) để tránh nằm sẵn dạng chữ thường trên máy chủ; lần cập nhật sau (Phụ lục A) cần token mới, sửa lại `git remote set-url origin ...` lúc đó.
 
@@ -314,13 +316,13 @@ sudo ufw allow 80,443/tcp
 
 Nếu các chi nhánh khác nằm ở VLAN/subnet riêng, nhờ bộ phận quản lý mạng xác nhận có tường lửa/route nội bộ nào chặn cổng 80/443 tới IP máy ảo hay không.
 
-> **Lưu ý**: vì máy ảo có IP riêng trên switch External, **Windows Firewall của máy chủ không liên quan** tới traffic người dùng vào ứng dụng (traffic đi thẳng tới máy ảo, không qua ngăn xếp mạng của Windows). Windows Firewall chỉ cần mở nếu quản trị viên cần RDP vào chính Windows Server để quản trị Hyper-V.
+> **Lưu ý**: vì máy ảo có IP riêng trên switch External, **Windows Firewall của máy chủ không liên quan** tới traffic người dùng vào ứng dụng (traffic đi thẳng tới máy ảo, không qua ngăn xếp mạng của Windows). Windows Firewall chỉ cần mở nếu quản trị viên cần RDP vào chính Windows để quản trị Hyper-V.
 
 ### 3.5. Nếu máy chủ đã có sẵn Apache (hoặc webserver khác) chạy trên Windows
 
 > Đúng trường hợp của máy chủ PROD 3800quiz — máy chủ này **đã có sẵn Apache** chạy trên Windows (khác 7800quiz, máy chủ đó không có Apache).
 
-Cài chung được, **không xung đột port 80/443** — đúng nhờ kiến trúc External switch ở trên: Apache bind vào IP của chính Windows Server, còn Caddy trong máy ảo bind vào IP riêng của máy ảo (bước 3.2), hai địa chỉ IP khác nhau nên hai bên không hề "giành" cổng của nhau dù cùng chạy trên một máy chủ vật lý. (Điều này chỉ đúng khi làm theo đúng Giai đoạn 3 — nếu port-forward 80/443 từ Windows vào máy ảo thay vì dùng External switch, lúc đó Windows mới thực sự phải bind 2 cổng đó và sẽ xung đột thật với Apache.)
+Cài chung được, **không xung đột port 80/443** — đúng nhờ kiến trúc External switch ở trên: Apache bind vào IP của chính Windows, còn Caddy trong máy ảo bind vào IP riêng của máy ảo (bước 3.2), hai địa chỉ IP khác nhau nên hai bên không hề "giành" cổng của nhau dù cùng chạy trên một máy chủ vật lý. (Điều này chỉ đúng khi làm theo đúng Giai đoạn 3 — nếu port-forward 80/443 từ Windows vào máy ảo thay vì dùng External switch, lúc đó Windows mới thực sự phải bind 2 cổng đó và sẽ xung đột thật với Apache.)
 
 Vẫn cần lưu ý 3 điểm sau khi triển khai chung:
 - **IP/tên riêng**: `SITE_ADDRESS` phải là IP tĩnh/tên nội bộ **khác** với IP/tên đang gán cho site Apache hiện tại.
@@ -692,7 +694,7 @@ bash scripts/backup-db.sh
 
 **Máy dùng để build**: máy Windows hay **macOS đều được** — chỉ cần có Docker Desktop (hoặc **OrbStack trên macOS**, dùng chung `docker`/`docker buildx` CLI, hỗ trợ đầy đủ build đa kiến trúc y hệt Docker Desktop — dự án này vốn đã dùng OrbStack cho môi trường dev nên máy dev Mac đang có sẵn, không cần cài thêm gì) và Internet nhanh (VD máy dev đang có sẵn mã nguồn mới nhất). Không nhất thiết phải là máy Windows.
 
-> ⚠️ **Nếu build trên Mac Apple Silicon (M1/M2/M3/M4, chip ARM)**: máy PROD chạy kiến trúc `linux/amd64` (Windows Server + Hyper-V + Ubuntu, không phải ARM), khác hẳn kiến trúc gốc `arm64` của Mac — **bắt buộc** chỉ định `--platform linux/amd64` khi build, thiếu tham số này sẽ ra ảnh ARM không chạy được trên PROD. Máy Windows hoặc Mac Intel vốn đã là `amd64` nên không bắt buộc, nhưng nên chỉ định rõ cho chắc chắn.
+> ⚠️ **Nếu build trên Mac Apple Silicon (M1/M2/M3/M4, chip ARM)**: máy PROD chạy kiến trúc `linux/amd64` (Windows 11 Pro + Hyper-V + Ubuntu, không phải ARM), khác hẳn kiến trúc gốc `arm64` của Mac — **bắt buộc** chỉ định `--platform linux/amd64` khi build, thiếu tham số này sẽ ra ảnh ARM không chạy được trên PROD. Máy Windows hoặc Mac Intel vốn đã là `amd64` nên không bắt buộc, nhưng nên chỉ định rõ cho chắc chắn.
 
 ### D.1. Build + đóng gói trên máy dev (OrbStack)
 
@@ -728,7 +730,7 @@ ls -lh ~/Desktop/quiz3800-deploy/quiz3800-images.tar
 ### D.2. Chuyển file qua USB vào PROD
 
 1. Copy `quiz3800-images.tar` từ `~/Desktop/quiz3800-deploy/` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.3).
-2. Cắm USB vào máy chủ Windows Server, copy file vào `D:\quiz\quiz3800-images.tar`.
+2. Cắm USB vào máy chủ Windows, copy file vào `D:\quiz\quiz3800-images.tar`.
 3. Hyper-V không có sẵn cách gắn USB thẳng vào máy ảo — chuyển tiếp file từ Windows sang Ubuntu qua mạng nội bộ (SSH đã cài ở Giai đoạn 2.3), dùng OpenSSH client có sẵn trên Windows:
    ```powershell
    # Không biết IP máy ảo thì lấy qua Hyper-V, không cần vào console:
