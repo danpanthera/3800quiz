@@ -50,6 +50,21 @@ export function playWinSound() {
   beep(784, 220, 200)
 }
 
+// Tiếng tích tắc đếm ngược — chỉ vang ở 4 giây cuối, TO DẦN theo từng giây
+// (secondsLeft 4 → 1) để tạo cảm giác gấp gáp. Cùng cao độ, chỉ đổi âm lượng.
+export function playTickSound(secondsLeft: number) {
+  const clamped = Math.min(4, Math.max(1, Math.round(secondsLeft)))
+  const volume = 0.08 + (4 - clamped) * 0.06 // giây 4: 0.08 → giây 1: 0.26
+  beep(784, 90, 0, 'square', volume)
+}
+
+// Chuông "reeng!" khi hết giờ mà đội/người chơi đó VẪN CHƯA gửi đáp án. Đội đã
+// trả lời rồi thì không gọi hàm này (xem useArenaCountdownSound).
+export function playTimeUpBell() {
+  beep(988, 200, 0, 'triangle', 0.22)
+  beep(1480, 420, 60, 'triangle', 0.16)
+}
+
 export async function fireConfetti() {
   const confetti = (await import('canvas-confetti')).default
   confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } })

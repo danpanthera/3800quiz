@@ -14,6 +14,7 @@ import { useAuth } from '../lib/useAuth'
 import { createArenaSocket } from '../lib/arena-socket'
 import { useServerClock } from '../hooks/useServerClock'
 import { useArenaCountdown } from '../hooks/useArenaCountdown'
+import { useArenaCountdownSound } from '../hooks/useArenaCountdownSound'
 import { ArenaCountdownRing } from '../components/ArenaCountdownRing'
 import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
 import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
@@ -88,6 +89,14 @@ export default function ArenaPlayerPage() {
     currentQuestion?.deadlineAtMs ?? null,
     currentQuestion?.startedAtMs ?? null,
     getServerNow,
+  )
+  // Đội mình chưa gửi đáp án khi hết giờ mới nghe chuông — đã gửi rồi thì thôi.
+  useArenaCountdownSound(
+    countdown.seconds,
+    countdown.isExpired,
+    !hasAnswered,
+    currentQuestion?.roundId,
+    view === 'game' && !revealData,
   )
 
   const { data: preview, isLoading: previewLoading, isError: previewFailed } = useQuery<SessionPreview>({
@@ -488,7 +497,7 @@ export default function ArenaPlayerPage() {
         <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
           <Tag color={myTeamColor}>{teamName}</Tag>
           <Space size={12}>
-            {!isRevealed && <ArenaCountdownRing {...countdown} size={40} />}
+            {!isRevealed && <ArenaCountdownRing {...countdown} size={72} />}
             <Text strong>{myScore} điểm</Text>
           </Space>
         </Space>

@@ -1,4 +1,8 @@
-import { khoaGiongDoc } from './giong-doc-key';
+import {
+  khoaGiongDoc,
+  khoaGiongDocCauHoi,
+  giongCuaCauHoi,
+} from './giong-doc-key';
 
 // Bộ vector đóng băng — PHẢI khớp tuyệt đối với bộ ở
 // apps/web/src/lib/giong-doc-key.spec.ts. Đây là "khoá liên kết" giữa server
@@ -48,5 +52,42 @@ describe('khoaGiongDoc', () => {
     const b = khoaGiongDoc('Đáp án B');
     const c = khoaGiongDoc('đáp án a'); // khác hoa/thường — KHÔNG coi là giống nhau
     expect(new Set([a, b, c]).size).toBe(3);
+  });
+});
+
+// Bộ vector đóng băng cho phần "giọng theo câu hỏi" (đề bài + đáp án) — PHẢI
+// khớp tuyệt đối với bộ ở apps/web/src/lib/giong-doc-key.spec.ts, cùng lý do
+// nêu trên.
+describe('khoaGiongDocCauHoi', () => {
+  it('băm đúng các giá trị đã đóng băng', () => {
+    expect(khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-A')).toBe(
+      '5e38cffdc67490c5',
+    );
+    expect(khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-D')).toBe(
+      '5e38cafdc6748846',
+    );
+    expect(khoaGiongDocCauHoi('Đáp án A', 'vi-VN-Neural2-A')).toBe(
+      '2e00f5765ec43266',
+    );
+  });
+
+  it('cùng text nhưng khác giọng phải ra khoá khác nhau', () => {
+    const a = khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-A');
+    const d = khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-D');
+    expect(a).not.toBe(d);
+  });
+});
+
+describe('giongCuaCauHoi', () => {
+  it('quyết định đúng các giá trị đã đóng băng', () => {
+    expect(giongCuaCauHoi('Xin chào')).toBe('vi-VN-Neural2-A');
+    expect(
+      giongCuaCauHoi('Theo Quy định số 3838/QyĐ-NHNo-TD ngày 15/11/2024'),
+    ).toBe('vi-VN-Neural2-A');
+  });
+
+  it('cùng 1 nội dung luôn ra cùng 1 giọng (ổn định qua nhiều lần gọi)', () => {
+    const noiDung = 'Câu hỏi bất kỳ để kiểm tra tính ổn định';
+    expect(giongCuaCauHoi(noiDung)).toBe(giongCuaCauHoi(noiDung));
   });
 });

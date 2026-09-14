@@ -7,9 +7,11 @@ import api, { getErrorMessage } from '../lib/api'
 import { createArenaSocket } from '../lib/arena-socket'
 import { useServerClock } from '../hooks/useServerClock'
 import { useArenaCountdown } from '../hooks/useArenaCountdown'
+import { useArenaCountdownSound } from '../hooks/useArenaCountdownSound'
 import { ArenaCountdownRing } from '../components/ArenaCountdownRing'
 import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
 import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
+import { giongCuaCauHoi } from '../lib/giong-doc-key'
 import {
   baoDangDoc,
   dangBatGiongDoc,
@@ -42,6 +44,7 @@ export default function ArenaSpectatorPage() {
   const [error, setError] = useState<string | null>(null)
   const [teams, setTeams] = useState<ArenaLeaderboardRow[]>([])
   const [currentQuestion, setCurrentQuestion] = useState<ArenaQuestionPayload | null>(null)
+  const [buzzedCount, setBuzzedCount] = useState(0)
   const [prepare, setPrepare] = useState<ArenaPreparePayload | null>(null)
   const [lastReveal, setLastReveal] = useState<ArenaRevealPayload | null>(null)
   const [final, setFinal] = useState<ArenaEndPayload | null>(null)
@@ -66,6 +69,14 @@ export default function ArenaSpectatorPage() {
     currentQuestion?.startedAtMs ?? null,
     getServerNow,
   )
+  // Đi chung công tắc giọng đọc — cùng ý nghĩa "máy này có nối loa hội trường".
+  useArenaCountdownSound(
+    countdown.seconds,
+    countdown.isExpired,
+    buzzedCount < teams.length,
+    currentQuestion?.roundId,
+    narrationOn && !!currentQuestion,
+  )
 
   useEffect(() => {
     if (!joinCode) return
@@ -89,11 +100,13 @@ export default function ArenaSpectatorPage() {
         setCurrentQuestion(state.currentQuestion)
         setLastReveal(state.lastReveal)
         setFinal(state.final)
+        setBuzzedCount(state.buzzes.length)
       })
       sock.on('arena.prepare', (p: ArenaPreparePayload) => {
         setPrepare(p)
         setCurrentQuestion(null)
         setLastReveal(null)
+        setBuzzedCount(0)
         dungGiongDoc()
         if (narrationOnRef.current) {
           void docLanLuot(['Lĩnh vực', p.subjectName ?? 'Chưa phân loại'], {
@@ -105,13 +118,18 @@ export default function ArenaSpectatorPage() {
         setPrepare(null)
         setCurrentQuestion(q)
         setLastReveal(null)
+        setBuzzedCount(0)
         dungGiongDoc()
         // Đấu trường CHỈ đọc đề bài, không đọc đáp án (đã hiện to trên màn hình,
         // và mỗi câu chỉ có ~20s — đọc thêm 4 đáp án dễ vượt quá thời gian).
         if (narrationOnRef.current) {
-          void docLanLuot([q.question.content], { maxMs: q.deadlineAtMs - q.serverNowMs - 2000 })
+          // Cùng công thức giọng-theo-câu-hỏi với InstantQuizPlayer/ArenaPage —
+          // tái dùng đúng file audio đã sinh cho câu này.
+          const giong = giongCuaCauHoi(q.question.content)
+          void docLanLuot([{ text: q.question.content, giong }], { maxMs: q.deadlineAtMs - q.serverNowMs - 2000 })
         }
       })
+      sock.on('arena.buzz_in', () => setBuzzedCount((c) => c + 1))
       sock.on('arena.locked', () => dungGiongDoc())
       sock.on('arena.revealed', (r: ArenaRevealPayload) => {
         setLastReveal(r)
@@ -218,7 +236,7 @@ export default function ArenaSpectatorPage() {
         <>
           <Space style={{ marginBottom: 12 }}>
             <Title level={4} style={{ margin: 0 }}>Câu {currentQuestion.order + 1}/{currentQuestion.totalRounds}</Title>
-            <ArenaCountdownRing ringRef={countdown.ringRef} seconds={countdown.seconds} isExpired={countdown.isExpired} />
+            <ArenaCountdownRing ringRef={countdown.ringRef} seconds={countdown.seconds} isExpired={countdown.isExpired} size={72} />
           </Space>
           {currentQuestion.question.subjectName && <Tag color="green">Lĩnh vực: {currentQuestion.question.subjectName}</Tag>}
           <Title level={3}>{currentQuestion.question.content}</Title>

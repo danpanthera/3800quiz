@@ -46,3 +46,44 @@ export function khoaGiongDoc(text: string): string {
 export function urlGiongDoc(text: string): string {
   return `/giong-doc/${khoaGiongDoc(text)}.mp3`
 }
+
+// ─── Giọng Nam/Nữ theo TỪNG CÂU HỎI (đề bài + toàn bộ đáp án của câu đó) ────
+// ⚠️ apps/api/scripts/sinh-giong-doc.ts IMPORT ĐÚNG 3 hằng số này (không tự
+// định nghĩa lại) — client không có API nào cho biết "câu này giọng gì", phải
+// TỰ TÍNH giống hệt server rồi mới ghép đúng URL. Đổi 1 trong 3 số dưới đây mà
+// không sinh lại TOÀN BỘ audio ngay sẽ khiến phần đọc câu hỏi/đáp án bị CÂM
+// (miss file), không lỗi ầm ĩ.
+export const GIONG_NU_MAC_DINH = 'vi-VN-Neural2-A'
+export const GIONG_NAM_MAC_DINH = 'vi-VN-Neural2-D'
+export const TI_LE_GIONG_NAM = 0.5
+
+/**
+ * Quyết định giọng Nam/Nữ cho 1 câu hỏi — DỰA THẲNG vào khoá băm của NỘI DUNG
+ * ĐỀ BÀI (ổn định qua mọi lần chạy, không cần biết ID) — gọi HÀM NÀY (không
+ * phải tự băm riêng từng đáp án) rồi áp DÙNG CHUNG kết quả cho cả đề bài lẫn
+ * mọi đáp án của câu, để trọn 1 câu hỏi luôn cùng 1 giọng.
+ */
+export function giongCuaCauHoi(noiDungDeBai: string): string {
+  const k = khoaGiongDoc(noiDungDeBai)
+  const n = parseInt(k.slice(0, 8), 16)
+  return (n % 10000) / 10000 < TI_LE_GIONG_NAM ? GIONG_NAM_MAC_DINH : GIONG_NU_MAC_DINH
+}
+
+/**
+ * Khoá audio CHO ĐỀ BÀI/ĐÁP ÁN — có ghép thêm `giong` vì cùng 1 đáp án có thể
+ * bị NHIỀU CÂU HỎI KHÁC GIỌNG dùng chung (bộ đề ngân hàng hay tái dùng lại
+ * đúng 1 đáp án ở nhiều câu) — nếu chỉ băm theo nội dung như khoaGiongDoc() sẽ
+ * xảy ra tranh chấp: câu xử lý trước "chiếm" giọng, câu xử lý sau bị lệch.
+ * Ký tự ␞ (record separator) không thể xuất hiện trong nội dung câu hỏi
+ * thật, dùng làm dấu phân cách an toàn giữa text và giong.
+ * KHÁC với khoaGiongDoc()/urlGiongDoc() — dùng cho nhãn "A/B/C/D" và tên lĩnh
+ * vực, LUÔN đúng 1 giọng cố định dùng chung toàn hệ thống, không gắn theo câu.
+ */
+export function khoaGiongDocCauHoi(text: string, giong: string): string {
+  return bamFnv1a64(`${chuanHoaNheDeBam(text)}␞${giong}`)
+}
+
+/** URL file audio cho đề bài/đáp án — xem khoaGiongDocCauHoi(). */
+export function urlGiongDocCauHoi(text: string, giong: string): string {
+  return `/giong-doc/${khoaGiongDocCauHoi(text, giong)}.mp3`
+}

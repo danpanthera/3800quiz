@@ -19,11 +19,13 @@ import api, { getErrorMessage } from '../lib/api'
 import { createArenaSocket } from '../lib/arena-socket'
 import { useServerClock } from '../hooks/useServerClock'
 import { useArenaCountdown } from '../hooks/useArenaCountdown'
+import { useArenaCountdownSound } from '../hooks/useArenaCountdownSound'
 import { ArenaCountdownRing } from '../components/ArenaCountdownRing'
 import { ArenaBuzzStrip } from '../components/ArenaBuzzStrip'
 import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
 import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
 import { fireGoldSparkle, playFastestSound } from '../lib/feedback-fx'
+import { giongCuaCauHoi } from '../lib/giong-doc-key'
 import {
   baoDangDoc,
   dangBatGiongDoc,
@@ -118,6 +120,18 @@ export default function ArenaPage() {
     narrationOnRef.current = narrationOn
   }, [narrationOn])
 
+  // Tick/chuông đi CHUNG công tắc giọng đọc: cả 2 đều là "máy này có nối loa
+  // hay không" — nếu không, mỗi máy trong phòng phát tiếng riêng sẽ chồng nhau.
+  // "Còn đội chưa trả lời" = số lượt bấm chưa bằng tổng số đội CÓ người chơi.
+  const teamsTotal = buzzes[0]?.teamsTotal ?? teams.length
+  useArenaCountdownSound(
+    countdown.seconds,
+    countdown.isExpired,
+    buzzes.length < teamsTotal,
+    currentQuestion?.roundId,
+    narrationOn && view === 'game' && !revealData,
+  )
+
   const toggleNarration = (next: boolean) => {
     setNarrationOn(next)
     if (next) {
@@ -149,7 +163,10 @@ export default function ArenaPage() {
         maxMs: Math.max(0, prepare.prepareSec * 1000 - 300),
       })
     } else if (currentQuestion) {
-      void docLanLuot([currentQuestion.question.content], {
+      // Cùng công thức giọng-theo-câu-hỏi với InstantQuizPlayer — 1 câu hỏi
+      // luôn đọc cùng 1 giọng dù ở màn nào, và tái dùng đúng file audio đã sinh.
+      const giong = giongCuaCauHoi(currentQuestion.question.content)
+      void docLanLuot([{ text: currentQuestion.question.content, giong }], {
         maxMs: currentQuestion.deadlineAtMs - currentQuestion.serverNowMs - 2000,
       })
     }
@@ -1028,7 +1045,7 @@ function GameControl({
             <Space>
               <Text strong>Câu {(currentOrder) + 1}/{totalRounds}</Text>
               {currentQuestion && !isRevealed && !prepare && (
-                <ArenaCountdownRing {...countdown} size={40} />
+                <ArenaCountdownRing {...countdown} size={72} />
               )}
             </Space>
           }

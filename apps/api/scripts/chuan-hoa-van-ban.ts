@@ -68,20 +68,72 @@ export function chuyenNgayThang(text: string): string {
 }
 
 /**
- * Mã văn bản kiểu "3838/QyĐ-NHNo-TD" → "3838, QyĐ, NHNo, TD" — chỉ đổi "/" và
- * "-" thành dấu phẩy (tạo nhịp nghỉ), KHÔNG tự thêm chữ "số" hay mở rộng viết
- * tắt ở đây. Dữ liệu thật hầu như luôn viết sẵn "Quy định số 3838/..." hoặc
- * "Quy trình 3133/..." ngay trước mã — nếu hàm này tự thêm "số"/mở rộng "QyĐ"
- * thành "Quy định" thì câu đọc ra sẽ lặp "Quy định số ... Quy định, ...". Việc
- * mở rộng "QyĐ"/"NHNo"/"TD" bên trong mã để lại cho apDungTuDien() chạy SAU.
+ * Số văn bản đọc TỪNG CHỮ SỐ riêng lẻ, KHÔNG đọc theo giá trị số học — quy ước
+ * đọc số hồ sơ/công văn thực tế. VD: "2929" → "hai chín hai chín", KHÔNG phải
+ * "hai nghìn chín trăm hai mươi chín".
+ */
+function docTungChuSo(so: string): string {
+  return so
+    .split('')
+    .map((c) => TEN_SO_HANG[Number(c)])
+    .join(' ');
+}
+
+/**
+ * Tên chữ cái tiếng Việt dùng để ĐÁNH VẦN các cụm viết tắt xuất hiện TRONG số/
+ * ký hiệu văn bản (vd. "2234/QTr-NHNo-KHDN") — KHÁC với đọc nguyên nghĩa ở
+ * tu-dien-viet-tat.json (dùng cho văn bản/câu nói thông thường, vd. "tăng
+ * trưởng KHDN" → "tăng trưởng khách hàng doanh nghiệp"). Chữ nào CHƯA có tên ở
+ * đây thì giữ nguyên ký tự gốc (an toàn hơn đoán sai, chờ bổ sung khi gặp).
+ */
+const TEN_CHU_CAI: Record<string, string> = {
+  b: 'bê', c: 'xê', d: 'đê', đ: 'đê', g: 'gờ', h: 'hắt', i: 'i', k: 'ca',
+  l: 'lờ', m: 'mờ', n: 'nờ', o: 'o', p: 'pê', q: 'quy', r: 'rờ', s: 'ét',
+  t: 'tê', u: 'u', v: 'vê', x: 'ích', y: 'i',
+};
+
+/** Đánh vần TỪNG CHỮ CÁI của 1 cụm viết tắt — vd. "NHNo" → "nờ hắt nờ o". */
+function docTungChuCai(tu: string): string {
+  return tu
+    .split('')
+    .map((c) => TEN_CHU_CAI[c.toLowerCase()] ?? c)
+    .join(' ');
+}
+
+/**
+ * Mã văn bản kiểu "3838/QyĐ-NHNo-TD" → "ba tám ba tám, quy i đê, nờ hắt nờ o,
+ * tê đê" — phần số đọc từng chữ số (docTungChuSo), MỌI cụm chữ sau đó (kể cả
+ * cụm đầu tiên như QyĐ/QĐ/QC/QTr) đều đánh vần từng chữ cái (docTungChuCai),
+ * KHÔNG tra từ điển nghĩa apDungTuDien() — cụm chữ trong mã văn bản luôn đọc
+ * kiểu đánh vần, bất kể có/không nằm trong từ điển viết tắt. Đọc nguyên nghĩa
+ * (QyĐ→"Quy định", KHDN→"khách hàng doanh nghiệp"...) CHỈ áp dụng khi cụm đó
+ * đứng trong câu văn thông thường, không nằm trong mã dạng "số/chữ-chữ-...".
  * Chạy TRƯỚC chuyển ngày tháng để "3838/QyĐ..." không bị nhận nhầm là ngày.
  */
 export function chuyenMaVanBan(text: string): string {
-  const re = new RegExp(
+  // Mã 3 khúc kiểu "11/2026/TT-NHNN" (số hiệu/năm/loại văn bản-cơ quan) — số
+  // hiệu đọc THEO GIÁ TRỊ ("mười một", dùng soSangChu như đọc số thường), năm
+  // đọc TỪNG CHỮ SỐ ("hai không hai sáu", docTungChuSo), phần chữ vẫn đánh vần
+  // như mã 2 khúc. Chạy TRƯỚC mẫu 2 khúc để không bị "nuốt" mất khúc năm.
+  const re3 = new RegExp(
+    `(?<!${KY_TU_CHU_SO})(\\d{2,5})/(\\d{4})/([\\p{L}][\\p{L}\\p{N}]*(?:-[\\p{L}\\p{N}]+)*)(?!${KY_TU_CHU_SO})`,
+    'gu',
+  );
+  let ket = text.replace(re3, (_m, soHieu: string, nam: string, phan: string) => {
+    const cacCum = phan.split('-').map(docTungChuCai);
+    return `${soSangChu(Number(soHieu))}, ${docTungChuSo(nam)}, ${cacCum.join(', ')}`;
+  });
+
+  const re2 = new RegExp(
     `(?<!${KY_TU_CHU_SO})(\\d{2,5})/([\\p{L}][\\p{L}\\p{N}]*(?:-[\\p{L}\\p{N}]+)*)(?!${KY_TU_CHU_SO})`,
     'gu',
   );
-  return text.replace(re, (_m, so: string, phan: string) => `${so}, ${phan.split('-').join(', ')}`);
+  ket = ket.replace(re2, (_m, so: string, phan: string) => {
+    const cacCum = phan.split('-').map(docTungChuCai);
+    return `${docTungChuSo(so)}, ${cacCum.join(', ')}`;
+  });
+
+  return ket;
 }
 
 const TEN_SO_DON_VI = ['', 'nghìn', 'triệu', 'tỷ', 'nghìn tỷ'];

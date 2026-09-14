@@ -12,7 +12,7 @@ export function ArenaCountdownRing({
   ringRef,
   seconds,
   isExpired,
-  size = 56,
+  size = 72,
 }: {
   ringRef: RefObject<HTMLElement | null>
   seconds: number
@@ -24,7 +24,7 @@ export function ArenaCountdownRing({
     <div
       ref={ringRef as RefObject<HTMLDivElement>}
       className={`arena-timer-ring${isLow ? ' arena-timer-low' : ''}`}
-      style={{ width: size, height: size, fontSize: size * 0.32 }}
+      style={{ width: size, height: size, fontSize: size * 0.34, boxShadow: '0 3px 10px rgba(0,0,0,0.22)' }}
     >
       <span className="arena-timer-ring-value">{isExpired ? 0 : seconds}</span>
     </div>

@@ -6,14 +6,14 @@
 // File audio sinh sẵn bằng `npm run giong-doc` (apps/api/scripts/sinh-giong-doc.ts),
 // đặt tên theo hash nội dung — xem urlGiongDoc() ở giong-doc-key.ts. Thiếu file
 // (câu mới thêm/sửa chưa sinh lại audio) → im lặng, KHÔNG báo lỗi ầm ĩ (fail-safe).
-import { urlGiongDoc } from './giong-doc-key'
+import { urlGiongDoc, urlGiongDocCauHoi } from './giong-doc-key'
 
 export type PhamViGiongDoc = 'instant' | 'arena-host' | 'arena-spectator'
 
 const KHOA_LUU: Record<PhamViGiongDoc, string> = {
-  instant: '3800quiz.instant-player.giong-doc',
-  'arena-host': '3800quiz.arena-host.giong-doc',
-  'arena-spectator': '3800quiz.arena-spectator.giong-doc',
+  instant: '7800quiz.instant-player.giong-doc',
+  'arena-host': '7800quiz.arena-host.giong-doc',
+  'arena-spectator': '7800quiz.arena-spectator.giong-doc',
 }
 
 /** Mặc định TẮT ở mọi phạm vi — phải == 'on' mới coi là bật. */
@@ -140,27 +140,37 @@ export interface TuyChonDocLanLuot {
   maxMs?: number
 }
 
+/**
+ * 1 mục cần đọc — chuỗi thường (nhãn "A/B/C/D", tên lĩnh vực…) dùng URL 1 giọng
+ * cố định chung toàn hệ thống (urlGiongDoc); còn ĐỀ BÀI/ĐÁP ÁN của 1 câu hỏi
+ * phải truyền kèm `giong` (lấy từ giongCuaCauHoi(noiDungDeBai) ở nơi gọi) để
+ * dùng ĐÚNG bản audio khớp giọng của câu đó (urlGiongDocCauHoi) — xem lý do ở
+ * giong-doc-key.ts (đáp án có thể bị nhiều câu khác giọng dùng chung).
+ */
+export type MucDocLanLuot = string | { text: string; giong: string }
+
 function cho(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
 /**
- * Phát nối tiếp các chuỗi văn bản — TỰ dựng URL từ nội dung (urlGiongDoc), tự bỏ
- * qua chuỗi rỗng. An toàn gọi lượt mới trong khi lượt cũ đang phát (lượt cũ tự
- * dừng ở lần kiểm tra thế hệ kế tiếp).
+ * Phát nối tiếp các mục — TỰ dựng URL từ nội dung (urlGiongDoc/urlGiongDocCauHoi
+ * tuỳ mục có kèm `giong` hay không), tự bỏ qua chuỗi rỗng. An toàn gọi lượt mới
+ * trong khi lượt cũ đang phát (lượt cũ tự dừng ở lần kiểm tra thế hệ kế tiếp).
  */
-export async function docLanLuot(cacChuoi: string[], tuyChon: TuyChonDocLanLuot = {}): Promise<void> {
+export async function docLanLuot(cacMuc: MucDocLanLuot[], tuyChon: TuyChonDocLanLuot = {}): Promise<void> {
   const theHeCuaLuotNay = ++theHe
   const gapMs = tuyChon.gapMs ?? 150
   const hetHanLuc = tuyChon.maxMs != null ? Date.now() + tuyChon.maxMs : null
 
-  for (const chuoiGoc of cacChuoi) {
+  for (const mucGoc of cacMuc) {
     if (theHe !== theHeCuaLuotNay) return
     if (hetHanLuc != null && Date.now() >= hetHanLuc) return
-    const chuoi = chuoiGoc.trim()
-    if (!chuoi) continue
+    const text = (typeof mucGoc === 'string' ? mucGoc : mucGoc.text).trim()
+    if (!text) continue
+    const url = typeof mucGoc === 'string' ? urlGiongDoc(text) : urlGiongDocCauHoi(text, mucGoc.giong)
 
-    await phatMotFile(urlGiongDoc(chuoi), theHeCuaLuotNay)
+    await phatMotFile(url, theHeCuaLuotNay)
     if (theHe !== theHeCuaLuotNay) return
     await cho(gapMs)
   }
@@ -175,7 +185,7 @@ let kenhPhatSong: BroadcastChannel | null = null
 function layKenhPhatSong(): BroadcastChannel | null {
   try {
     if (typeof BroadcastChannel === 'undefined') return null
-    if (!kenhPhatSong) kenhPhatSong = new BroadcastChannel('3800quiz-giong-doc')
+    if (!kenhPhatSong) kenhPhatSong = new BroadcastChannel('7800quiz-giong-doc')
     return kenhPhatSong
   } catch {
     return null

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { khoaGiongDoc, urlGiongDoc } from './giong-doc-key'
+import { khoaGiongDoc, urlGiongDoc, khoaGiongDocCauHoi, urlGiongDocCauHoi, giongCuaCauHoi } from './giong-doc-key'
 
 // Bộ vector đóng băng — PHẢI khớp tuyệt đối với bộ ở
 // apps/api/src/common/giong-doc-key.spec.ts. Đây là "khoá liên kết" giữa server
@@ -53,5 +53,42 @@ describe('khoaGiongDoc', () => {
 describe('urlGiongDoc', () => {
   it('trả về đúng đường dẫn /giong-doc/<khoá>.mp3', () => {
     expect(urlGiongDoc('Xin chào')).toBe('/giong-doc/bd0a981101045201.mp3')
+  })
+})
+
+// Bộ vector đóng băng cho phần "giọng theo câu hỏi" (đề bài + đáp án) — PHẢI
+// khớp tuyệt đối với bộ ở apps/api/src/common/giong-doc-key.spec.ts, cùng lý
+// do nêu ở đầu file.
+describe('khoaGiongDocCauHoi', () => {
+  it('băm đúng các giá trị đã đóng băng', () => {
+    expect(khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-A')).toBe('5e38cffdc67490c5')
+    expect(khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-D')).toBe('5e38cafdc6748846')
+    expect(khoaGiongDocCauHoi('Đáp án A', 'vi-VN-Neural2-A')).toBe('2e00f5765ec43266')
+  })
+
+  it('cùng text nhưng khác giọng phải ra khoá khác nhau', () => {
+    const a = khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-A')
+    const d = khoaGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-D')
+    expect(a).not.toBe(d)
+  })
+})
+
+describe('urlGiongDocCauHoi', () => {
+  it('trả về đúng đường dẫn /giong-doc/<khoá>.mp3', () => {
+    expect(urlGiongDocCauHoi('Xin chào', 'vi-VN-Neural2-A')).toBe('/giong-doc/5e38cffdc67490c5.mp3')
+  })
+})
+
+describe('giongCuaCauHoi', () => {
+  it('quyết định đúng các giá trị đã đóng băng', () => {
+    expect(giongCuaCauHoi('Xin chào')).toBe('vi-VN-Neural2-A')
+    expect(giongCuaCauHoi('Theo Quy định số 3838/QyĐ-NHNo-TD ngày 15/11/2024')).toBe(
+      'vi-VN-Neural2-A',
+    )
+  })
+
+  it('cùng 1 nội dung luôn ra cùng 1 giọng (ổn định qua nhiều lần gọi)', () => {
+    const noiDung = 'Câu hỏi bất kỳ để kiểm tra tính ổn định'
+    expect(giongCuaCauHoi(noiDung)).toBe(giongCuaCauHoi(noiDung))
   })
 })

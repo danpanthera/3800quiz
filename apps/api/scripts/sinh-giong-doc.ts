@@ -9,13 +9,34 @@
 //   npm run giong-doc -- --subject "CNTT"
 //   npm run giong-doc -- --prune
 //
+// Riêng ĐỀ BÀI/ĐÁP ÁN của mọi câu hỏi LUÔN trộn ~50% giọng Nam theo TỪNG CÂU
+// (xem giongCuaCauHoi() ở giong-doc-key.ts) — không có cờ --male-ratio/
+// --male-voice để tắt/đổi nữa: 3 hằng số đó PHẢI khớp TUYỆT ĐỐI với bản client
+// tự tính lúc phát (không có API nào cho client biết "câu này giọng gì"), nên
+// cố tình cố định ở 1 nơi duy nhất thay vì cho cấu hình rời rạc dễ lệch.
+// --voice ở trên chỉ áp dụng cho nhãn "A/B/C/D"/tên lĩnh vực (dùng chung toàn
+// hệ thống, không đổi theo câu).
+//
 // Xem toàn bộ tham số ở hàm parseArgs() bên dưới.
 import { PrismaClient } from '@prisma/client';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
-import { khoaGiongDoc } from '../src/common/giong-doc-key';
+import {
+  khoaGiongDoc,
+  khoaGiongDocCauHoi,
+  giongCuaCauHoi,
+} from '../src/common/giong-doc-key';
 import { chuanHoaVanBanDeDoc } from './chuan-hoa-van-ban';
 import { macos } from './providers/macos';
 import { azure } from './providers/azure';
@@ -25,13 +46,18 @@ import type { NhaCungCapTts } from './providers/loai';
 
 const execFileAsync = promisify(execFile);
 
-const NHA_CUNG_CAP: Record<string, NhaCungCapTts> = { macos, azure, fptai, google };
+const NHA_CUNG_CAP: Record<string, NhaCungCapTts> = {
+  macos,
+  azure,
+  fptai,
+  google,
+};
 
 const THU_MUC_GOC = join(__dirname, '..', '..', '..'); // apps/api/scripts/.. .. .. → gốc repo
 const THU_MUC_AUDIO = join(THU_MUC_GOC, 'assets', 'giong-doc');
 const FILE_MANIFEST = join(THU_MUC_AUDIO, 'manifest.json');
 
-const CUM_CO_DINH = ['Lĩnh vực', 'Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D'];
+const CUM_CO_DINH = ['Lĩnh vực', 'A', 'B', 'C', 'D'];
 
 interface ThamSo {
   provider: string;
@@ -57,7 +83,9 @@ function parseArgs(argv: string[]): ThamSo {
   const provider = get('provider') ?? 'macos';
   const nhaCungCap = NHA_CUNG_CAP[provider];
   if (!nhaCungCap) {
-    throw new Error(`--provider không hợp lệ: "${provider}". Chọn 1 trong: ${Object.keys(NHA_CUNG_CAP).join(', ')}`);
+    throw new Error(
+      `--provider không hợp lệ: "${provider}". Chọn 1 trong: ${Object.keys(NHA_CUNG_CAP).join(', ')}`,
+    );
   }
 
   return {
@@ -128,7 +156,13 @@ function tachDoanQuaDai(text: string, gioiHan: number): string[] {
 
 async function docThoiLuong(duongDan: string): Promise<number> {
   const { stdout } = await execFileAsync('ffprobe', [
-    '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', duongDan,
+    '-v',
+    'error',
+    '-show_entries',
+    'format=duration',
+    '-of',
+    'csv=p=0',
+    duongDan,
   ]);
   return Number(stdout.trim());
 }
@@ -146,18 +180,36 @@ async function nenVaGhi(cacFileTho: string[], dichMp3: string): Promise<void> {
     args.push('-af', BO_LOC_AM_THANH);
   } else {
     const dauVao = cacFileTho.map((_, i) => `[${i}:a]`).join('');
-    args.push('-filter_complex', `${dauVao}concat=n=${cacFileTho.length}:v=0:a=1[noiL];[noiL]${BO_LOC_AM_THANH}[out]`);
+    args.push(
+      '-filter_complex',
+      `${dauVao}concat=n=${cacFileTho.length}:v=0:a=1[noiL];[noiL]${BO_LOC_AM_THANH}[out]`,
+    );
     args.push('-map', '[out]');
   }
   // "-f mp3" bắt buộc: đích ghi ra là "<key>.mp3.tmp" (ghi tạm rồi mới rename), đuôi
   // ".tmp" khiến ffmpeg không tự đoán được muxer từ phần mở rộng.
-  args.push('-ac', '1', '-ar', '22050', '-c:a', 'libmp3lame', '-b:a', '32k', '-write_xing', '1', '-f', 'mp3', dichMp3);
+  args.push(
+    '-ac',
+    '1',
+    '-ar',
+    '22050',
+    '-c:a',
+    'libmp3lame',
+    '-b:a',
+    '32k',
+    '-write_xing',
+    '1',
+    '-f',
+    'mp3',
+    dichMp3,
+  );
   await execFileAsync('ffmpeg', args);
 }
 
 interface MucCanDoc {
   key: string;
   text: string;
+  voice: string;
 }
 
 async function main() {
@@ -167,42 +219,79 @@ async function main() {
 
   // Dọn file tạm còn sót lại từ lần chạy trước bị dừng giữa chừng (Ctrl+C, crash…).
   for (const f of readdirSync(THU_MUC_AUDIO)) {
-    if (f.startsWith('.tmp-') || f.endsWith('.mp3.tmp')) rmSync(join(THU_MUC_AUDIO, f), { force: true });
+    if (f.startsWith('.tmp-') || f.endsWith('.mp3.tmp'))
+      rmSync(join(THU_MUC_AUDIO, f), { force: true });
   }
 
   const nhaCungCap = NHA_CUNG_CAP[opts.provider];
-  console.log(`Provider: ${nhaCungCap.id} | Giọng: ${opts.voice}${opts.dryRun ? ' | [DRY-RUN]' : ''}`);
+  console.log(
+    `Provider: ${nhaCungCap.id} | Nhãn/lĩnh vực: ${opts.voice} | Đề bài/đáp án: ~50% giọng Nam theo câu` +
+      `${opts.dryRun ? ' | [DRY-RUN]' : ''}`,
+  );
 
   const prisma = new PrismaClient();
   const subjects = await prisma.subject.findMany();
   const questions = await prisma.question.findMany({
     include: { options: true, subject: true, quiz: true },
   });
-  const quizVersions = await prisma.quizVersion.findMany({ select: { snapshot: true } });
+  const quizVersions = await prisma.quizVersion.findMany({
+    select: { snapshot: true },
+  });
   await prisma.$disconnect();
 
   const apDungBoLoc = (q: (typeof questions)[number]): boolean => {
-    if (opts.subject && q.subject?.name !== opts.subject && !q.subject?.name?.includes(opts.subject)) return false;
-    if (opts.quiz && q.quiz?.title !== opts.quiz && !q.quiz?.title?.includes(opts.quiz)) return false;
+    if (
+      opts.subject &&
+      q.subject?.name !== opts.subject &&
+      !q.subject?.name?.includes(opts.subject)
+    )
+      return false;
+    if (
+      opts.quiz &&
+      q.quiz?.title !== opts.quiz &&
+      !q.quiz?.title?.includes(opts.quiz)
+    )
+      return false;
     return true;
   };
 
   // ── Gom toàn bộ văn bản cần đọc, khử trùng lặp theo khoaGiongDoc() ──────────
-  const kho = new Map<string, string>(); // key -> text gốc (bản đầu tiên gặp)
-  const themVaoKho = (text: string | null | undefined) => {
+  // Giọng quyết định THEO TỪNG CÂU HỎI (từ hash nội dung câu hỏi), áp dụng
+  // CHUNG cho cả đề bài lẫn MỌI đáp án của câu đó — nghe trọn 1 câu không bị
+  // lẫn Nam/Nữ giữa đề và đáp án. Nhãn "A/B/C/D"/tên lĩnh vực dùng CHUNG cho
+  // hàng nghìn câu khác nhau nên giữ CỐ ĐỊNH đúng 1 giọng (opts.voice), không
+  // đổi theo câu — nếu không phải sinh 2 bản cho mọi chuỗi dùng chung, tốn gấp
+  // đôi chi phí TTS (đã bàn và chốt phương án đơn giản này).
+  const kho = new Map<string, { text: string; voice: string }>(); // key -> {text gốc, giọng} (bản đầu tiên gặp)
+  const themVaoKho = (
+    key: string,
+    text: string | null | undefined,
+    voice: string,
+  ) => {
     const t = (text ?? '').trim();
     if (!t) return;
-    const k = khoaGiongDoc(t);
-    if (!kho.has(k)) kho.set(k, t);
+    if (!kho.has(key)) kho.set(key, { text: t, voice });
+  };
+  // Nhãn "A/B/C/D"/tên lĩnh vực: khoá THEO NỘI DUNG, dùng chung toàn hệ thống.
+  const themNhan = (text: string | null | undefined) =>
+    themVaoKho(khoaGiongDoc((text ?? '').trim()), text, opts.voice);
+  // Đề bài/đáp án của 1 câu hỏi: khoá THEO NỘI DUNG + GIỌNG — cùng 1 đáp án có
+  // thể bị nhiều câu khác giọng dùng chung, phải tách file theo giọng để không
+  // tranh chấp (xem khoaGiongDocCauHoi() ở giong-doc-key.ts).
+  const themCauHoi = (text: string | null | undefined, giong: string) => {
+    const t = (text ?? '').trim();
+    if (!t) return;
+    themVaoKho(khoaGiongDocCauHoi(t, giong), t, giong);
   };
 
-  for (const c of CUM_CO_DINH) themVaoKho(c);
-  for (const s of subjects) themVaoKho(s.name);
+  for (const c of CUM_CO_DINH) themNhan(c);
+  for (const s of subjects) themNhan(s.name);
 
   const cauHoiDaLoc = questions.filter(apDungBoLoc);
   for (const q of cauHoiDaLoc) {
-    themVaoKho(q.content);
-    for (const o of q.options) themVaoKho(o.content);
+    const giongCauHoi = giongCuaCauHoi(q.content.trim());
+    themCauHoi(q.content, giongCauHoi);
+    for (const o of q.options) themCauHoi(o.content, giongCauHoi);
   }
 
   // Quét cả snapshot đã đóng băng (QuizVersion.snapshot) — khi thi, câu hỏi đọc
@@ -217,19 +306,26 @@ async function main() {
     if (!snap?.questions) continue;
     if (opts.quiz && !snap.quiz?.title?.includes(opts.quiz)) continue;
     for (const q of snap.questions) {
-      themVaoKho(q.content);
-      for (const o of q.options ?? []) themVaoKho(o.content);
+      if (!q.content) continue;
+      const giongCauHoi = giongCuaCauHoi(q.content.trim());
+      themCauHoi(q.content, giongCauHoi);
+      for (const o of q.options ?? []) themCauHoi(o.content, giongCauHoi);
     }
   }
 
-  let danhSach: MucCanDoc[] = [...kho.entries()].map(([key, text]) => ({ key, text }));
+  let danhSach: MucCanDoc[] = [...kho.entries()].map(
+    ([key, { text, voice }]) => ({ key, text, voice }),
+  );
   if (opts.limit) danhSach = danhSach.slice(0, opts.limit);
 
-  console.log(`Tổng số chuỗi văn bản cần xét: ${danhSach.length} (đã khử trùng lặp)`);
+  console.log(
+    `Tổng số chuỗi văn bản cần xét: ${danhSach.length} (đã khử trùng lặp)`,
+  );
 
   // ── Sinh audio ───────────────────────────────────────────────────────────
   const manifest = docManifest();
-  let daSinh = 0, daBoQua = 0;
+  let daSinh = 0,
+    daBoQua = 0;
   let ghiManifestTuLanCuoi = 0;
 
   for (const muc of danhSach) {
@@ -237,12 +333,16 @@ async function main() {
     const vanBanDaChuan = chuanHoaVanBanDeDoc(muc.text, { spellOut });
     const mucCu = manifest[muc.key];
     const fileDich = join(THU_MUC_AUDIO, `${muc.key}.mp3`);
+    // Giọng đã được quyết định sẵn theo TỪNG CÂU HỎI lúc gom pool (xem
+    // themVaoKho() ở trên) — dùng thẳng, không tính lại theo hash của riêng
+    // chuỗi này (nếu không đề bài và đáp án của CÙNG 1 câu có thể lệch giọng).
+    const giongChoMuc = muc.voice;
     const daCoDuNoiDung =
       !opts.force &&
       mucCu &&
       mucCu.norm === vanBanDaChuan &&
       mucCu.provider === opts.provider &&
-      mucCu.voice === opts.voice &&
+      mucCu.voice === giongChoMuc &&
       existsSync(fileDich);
 
     if (daCoDuNoiDung) {
@@ -258,9 +358,14 @@ async function main() {
 
     try {
       const doan = tachDoanQuaDai(vanBanDaChuan, nhaCungCap.gioiHanKyTu);
-      const fileThoTmp = doan.map((_, i) => join(THU_MUC_AUDIO, `.tmp-${muc.key}-${i}.raw`));
+      const fileThoTmp = doan.map((_, i) =>
+        join(THU_MUC_AUDIO, `.tmp-${muc.key}-${i}.raw`),
+      );
       for (let i = 0; i < doan.length; i++) {
-        await nhaCungCap.sinh(doan[i], fileThoTmp[i], { voice: opts.voice, rate: opts.rate });
+        await nhaCungCap.sinh(doan[i], fileThoTmp[i], {
+          voice: giongChoMuc,
+          rate: opts.rate,
+        });
       }
       const fileTmpDich = fileDich + '.tmp';
       await nenVaGhi(fileThoTmp, fileTmpDich);
@@ -274,12 +379,16 @@ async function main() {
         dur: Math.round(thoiLuong * 100) / 100,
         bytes: statSync(fileDich).size,
         provider: opts.provider,
-        voice: opts.voice,
+        voice: giongChoMuc,
       };
       daSinh++;
-      if (daSinh % 10 === 0) console.log(`  ... đã sinh ${daSinh}/${danhSach.length - daBoQua}`);
+      if (daSinh % 10 === 0)
+        console.log(`  ... đã sinh ${daSinh}/${danhSach.length - daBoQua}`);
     } catch (err) {
-      console.error(`LỖI khi sinh "${muc.key}" ("${muc.text.slice(0, 40)}..."):`, (err as Error).message);
+      console.error(
+        `LỖI khi sinh "${muc.key}" ("${muc.text.slice(0, 40)}..."):`,
+        (err as Error).message,
+      );
     }
 
     ghiManifestTuLanCuoi++;
@@ -291,24 +400,33 @@ async function main() {
 
   if (!opts.dryRun) ghiManifest(manifest);
 
-  console.log(`\nHoàn tất: sinh mới ${daSinh}, bỏ qua (đã có) ${daBoQua}, tổng ${danhSach.length}.`);
+  console.log(
+    `\nHoàn tất: sinh mới ${daSinh}, bỏ qua (đã có) ${daBoQua}, tổng ${danhSach.length}.`,
+  );
 
   // ── Báo cáo câu có ĐỀ BÀI vượt --arena-limit (Đấu trường chỉ đọc đề bài) ───
   const canhBaoArena: { key: string; dur: number; preview: string }[] = [];
   for (const q of cauHoiDaLoc) {
-    const k = khoaGiongDoc(q.content.trim());
+    const noiDung = q.content.trim();
+    const k = khoaGiongDocCauHoi(noiDung, giongCuaCauHoi(noiDung));
     const m = manifest[k];
-    if (m && m.dur > opts.arenaLimit) canhBaoArena.push({ key: k, dur: m.dur, preview: m.preview });
+    if (m && m.dur > opts.arenaLimit)
+      canhBaoArena.push({ key: k, dur: m.dur, preview: m.preview });
   }
   if (canhBaoArena.length > 0) {
     canhBaoArena.sort((a, b) => b.dur - a.dur);
-    console.log(`\n⚠ ${canhBaoArena.length} câu có ĐỀ BÀI đọc vượt ${opts.arenaLimit}s (Đấu trường chỉ đọc đề):`);
+    console.log(
+      `\n⚠ ${canhBaoArena.length} câu có ĐỀ BÀI đọc vượt ${opts.arenaLimit}s (Đấu trường chỉ đọc đề):`,
+    );
     for (const c of canhBaoArena.slice(0, 20)) {
       console.log(`   [${c.key}] ${c.dur.toFixed(1)}s  "${c.preview}..."`);
     }
-    if (canhBaoArena.length > 20) console.log(`   ... và ${canhBaoArena.length - 20} câu khác.`);
-    console.log(`→ Gợi ý: đặt questionDurationSec ≥ ${Math.ceil(Math.max(...canhBaoArena.map((c) => c.dur)) + 5)}` +
-      ` giây cho các bộ đề chứa câu này, hoặc rút gọn nội dung câu hỏi.`);
+    if (canhBaoArena.length > 20)
+      console.log(`   ... và ${canhBaoArena.length - 20} câu khác.`);
+    console.log(
+      `→ Gợi ý: đặt questionDurationSec ≥ ${Math.ceil(Math.max(...canhBaoArena.map((c) => c.dur)) + 5)}` +
+        ` giây cho các bộ đề chứa câu này, hoặc rút gọn nội dung câu hỏi.`,
+    );
   }
 
   // ── Dọn file mồ côi ────────────────────────────────────────────────────────
@@ -319,7 +437,9 @@ async function main() {
       .map((f) => f.slice(0, -4))
       .filter((k) => !khoaHopLe.has(k));
     if (moCoi.length > 0) {
-      console.log(`\n${opts.prune ? 'Đang xoá' : 'Phát hiện'} ${moCoi.length} file mồ côi (nội dung không còn dùng):`);
+      console.log(
+        `\n${opts.prune ? 'Đang xoá' : 'Phát hiện'} ${moCoi.length} file mồ côi (nội dung không còn dùng):`,
+      );
       for (const k of moCoi) {
         console.log(`   ${k}.mp3`);
         if (opts.prune) {

@@ -14,7 +14,8 @@ import {
 } from '@ant-design/icons'
 import api from '../lib/api'
 import { fireConfetti, playCorrectSound, playWrongSound } from '../lib/feedback-fx'
-import { dangBatGiongDoc, datGiongDoc, docLanLuot, dungGiongDoc, moiGiongDoc } from '../lib/giong-doc'
+import { dangBatGiongDoc, datGiongDoc, docLanLuot, dungGiongDoc, moiGiongDoc, type MucDocLanLuot } from '../lib/giong-doc'
+import { giongCuaCauHoi } from '../lib/giong-doc-key'
 
 export interface InstantQuizOption {
   id: string
@@ -56,8 +57,8 @@ interface Props {
 // người làm bật công tắc "Tự động chuyển câu"; tắt công tắc thì phải tự bấm
 // "Tiếp tục" (nút này luôn có sẵn nên bật/tắt công tắc không đổi cách bấm tay).
 const AUTO_ADVANCE_DELAY_MS = 5_000
-const SOUND_STORAGE_KEY = '3800quiz.instant-player.sound'
-const AUTO_ADVANCE_STORAGE_KEY = '3800quiz.instant-player.auto-advance'
+const SOUND_STORAGE_KEY = '7800quiz.instant-player.sound'
+const AUTO_ADVANCE_STORAGE_KEY = '7800quiz.instant-player.auto-advance'
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60)
@@ -255,13 +256,17 @@ export default function InstantQuizPlayer({
       .slice()
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .map((o) => o.content)
-    const cumTuA = ['Đáp án A', 'Đáp án B', 'Đáp án C', 'Đáp án D']
-    const doc: string[] = []
+    // Đọc gọn "A"/"B"/"C"/"D" thay vì "Đáp án A"/"Đáp án B"... cho đỡ tốn thời gian nghe.
+    const cumTuA = ['A', 'B', 'C', 'D']
+    // Giọng quyết định THEO CÂU HỎI (từ nội dung đề bài) — áp dụng chung cho cả
+    // đề bài lẫn mọi đáp án của câu, để nghe trọn 1 câu không lẫn Nam/Nữ.
+    const giong = giongCuaCauHoi(currentQuestion.content)
+    const doc: MucDocLanLuot[] = []
     if (currentQuestion.subjectName) doc.push('Lĩnh vực', currentQuestion.subjectName)
-    doc.push(currentQuestion.content)
+    doc.push({ text: currentQuestion.content, giong })
     cacDapAn.forEach((noiDung, i) => {
       if (cumTuA[i]) doc.push(cumTuA[i])
-      doc.push(noiDung)
+      doc.push({ text: noiDung, giong })
     })
     void docLanLuot(doc)
     return () => dungGiongDoc()
