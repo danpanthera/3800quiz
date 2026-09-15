@@ -168,8 +168,8 @@ export default function App() {
                   </RequireAuth>
                 }
               />
-              {/* Full-screen, không lồng trong AppLayout — học viên quét QR vào chơi trên điện thoại
-                  không cần Header/Sider/Drawer của portal quản trị. Vẫn yêu cầu đăng nhập. */}
+              {/* Toàn màn hình, không lồng trong AppLayout — học viên quét QR vào chơi trên điện thoại
+                  không cần Header/Sider/Drawer của hệ thống quản trị. Vẫn yêu cầu đăng nhập. */}
               <Route
                 path="/arena/join/:joinCode"
                 element={

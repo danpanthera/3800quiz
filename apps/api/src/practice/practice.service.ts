@@ -30,7 +30,7 @@ export class PracticeService {
       }));
   }
 
-  // Lấy ngẫu nhiên `count` câu — KHÔNG tạo bản ghi gì cả (stateless), không
+  // Lấy ngẫu nhiên `count` câu — KHÔNG tạo bản ghi gì cả (không lưu trạng thái), không
   // tính vào điểm/XP/thống kê chính thức. Không trả isCorrect để khỏi lộ đáp
   // án qua Network tab trước khi người dùng bấm nộp.
   async start(subjectId: string | undefined, count: number) {

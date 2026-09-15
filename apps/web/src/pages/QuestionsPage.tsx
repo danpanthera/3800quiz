@@ -824,7 +824,7 @@ export default function QuestionsPage() {
         </Form>
       </Drawer>
 
-      {/* Modal: Import Excel */}
+      {/* Modal: Nhập Excel */}
       <Modal
         title={previewStep === 'upload' ? 'Import câu hỏi từ Excel' : 'Kiểm tra trước khi import'}
         open={importModalOpen}
@@ -1025,8 +1025,8 @@ export default function QuestionsPage() {
         )}
       </Modal>
 
-      {/* Modal: Sửa nhanh 1 câu trong bảng xem trước — mở lồng trên modal Import Excel,
-          để admin khắc phục cảnh báo chính tả/trùng lặp ngay mà không cần sửa lại file rồi upload lại */}
+      {/* Modal: Sửa nhanh 1 câu trong bảng xem trước — mở lồng trên modal Nhập Excel,
+          để admin khắc phục cảnh báo chính tả/trùng lặp ngay mà không cần sửa lại file rồi tải lên lại */}
       <Modal
         title={editingRow ? `Sửa câu hỏi — Dòng ${editingRow.rowNumber}` : 'Sửa câu hỏi'}
         open={editingRow !== null}

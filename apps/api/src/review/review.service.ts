@@ -15,7 +15,7 @@ export class ReviewService {
   constructor(private readonly prisma: PrismaService) {}
 
   // Thuật toán SM-2 rút gọn (chỉ 2 mức chất lượng: đúng/sai — không bắt người
-  // dùng tự chấm độ khó như Anki) — sai thì reset về ôn lại ngay hôm sau, đúng
+  // dùng tự chấm độ khó như Anki) — sai thì quay về ôn lại ngay hôm sau, đúng
   // thì dãn dần khoảng cách theo hệ số dễ nhớ (easeFactor).
   private applySm2(
     card: Sm2Input,
@@ -44,9 +44,9 @@ export class ReviewService {
 
   // Tạo lười thẻ ôn tập mới từ các câu trả lời SAI trong lịch sử bài đã nộp
   // (Submission/SubmissionAnswer — LUÔN được ghi ở finalize() bất kể chế độ
-  // thi, khác với QuizAttemptAnswer.isCorrect chỉ được set khi bật
+  // thi, khác với QuizAttemptAnswer.isCorrect chỉ được gán khi bật
   // instantFeedback). Cùng cách đọc dữ liệu với performance.service.ts, KHÔNG
-  // hook vào attempts.service.ts (file đang có phiên khác chỉnh sửa).
+  // đụng vào attempts.service.ts (file đang có phiên khác chỉnh sửa).
   private async syncNewCardsFromWrongAnswers(userId: string): Promise<void> {
     const submissions = await this.prisma.submission.findMany({
       where: { userId, status: 'GRADED' },

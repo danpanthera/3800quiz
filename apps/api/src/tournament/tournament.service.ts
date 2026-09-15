@@ -43,7 +43,7 @@ export class TournamentService {
   }
 
   // Yêu cầu số đội là luỹ thừa của 2 (2/4/8/16...) để bốc thăm loại trực tiếp
-  // không cần đội "bye" (miễn thi đấu vòng đầu) — giữ MVP đơn giản, admin tự
+  // không cần đội "bye" (miễn thi đấu vòng đầu) — giữ MVP đơn giản, quản trị viên tự
   // điều chỉnh số đội đăng ký cho tròn.
   async create(data: { name: string; quizId: string; teamNames: string[] }) {
     const names = [

@@ -113,7 +113,7 @@ export default function ClassesPage() {
     else createMut.mutate(values)
   }
 
-  // Users chưa có trong lớp
+  // Người dùng chưa có trong lớp
   const existingMemberIds = new Set(detail?.members.map((m) => m.user.id) ?? [])
   const availableUsers = allUsers.filter((u) => !existingMemberIds.has(u.id))
 

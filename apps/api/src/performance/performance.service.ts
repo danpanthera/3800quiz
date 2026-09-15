@@ -16,7 +16,7 @@ export class PerformanceService {
 
   /**
    * Tổng hợp tỷ lệ đúng theo từng Lĩnh vực (Subject) từ TOÀN BỘ bài đã nộp
-   * (Submission GRADED) của user — dùng cho widget "Bản đồ điểm yếu". Chỉ đọc
+   * (Submission GRADED) của người dùng — dùng cho khung hiển thị "Bản đồ điểm yếu". Chỉ đọc
    * dữ liệu lịch sử, không đụng tới bảng đang làm dở (QuizAttempt/attempts.service.ts).
    * Sắp theo correctRate tăng dần (yếu nhất lên đầu). Câu đã bị xoá khỏi ngân
    * hàng hoặc chưa phân loại lĩnh vực bị bỏ qua (không tính vào thống kê).
@@ -86,7 +86,7 @@ export class PerformanceService {
   }
 
   // Chấm đúng/sai theo đúng quy tắc của attempts.service.ts:gradeQuestion() — cố
-  // tình để bản riêng ở đây (không import chéo module) vì đây chỉ là thống kê
+  // tình để bản riêng ở đây (không nhập chéo giữa các module) vì đây chỉ là thống kê
   // tham khảo, không phải chấm điểm chính thức, và tránh phụ thuộc vòng giữa
   // các module đang được sửa song song.
   private isAnswerCorrect(

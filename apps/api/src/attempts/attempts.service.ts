@@ -38,7 +38,7 @@ interface SnapshotQuestion {
   orderIndex: number;
   points: number;
   options: SnapshotOption[];
-  // Optional vì snapshot cũ (tạo trước khi có tính năng hiển thị lĩnh vực) không
+  // Tùy chọn vì snapshot cũ (tạo trước khi có tính năng hiển thị lĩnh vực) không
   // có 2 field này — dùng 'subjectName' in question để phân biệt "thiếu key" (cần
   // tra cứu bổ sung) với "có key nhưng null" (câu chưa phân loại lĩnh vực).
   subjectId?: string | null;

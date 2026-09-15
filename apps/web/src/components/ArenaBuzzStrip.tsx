@@ -1,4 +1,4 @@
-// Dải chip "đội nào đã bấm + thời gian" — hiện ngay khi có đội trả lời, TRƯỚC
+// Dải thẻ "đội nào đã bấm + thời gian" — hiện ngay khi có đội trả lời, TRƯỚC
 // khi công bố đúng/sai (tránh lộ đáp án cho đội chưa trả lời). Dùng chung màn
 // MC và màn người chơi.
 

@@ -188,7 +188,7 @@ model QuestionOption {
 model Assignment {
   id           String           @id @default(uuid())
   quizId       String           @map("quiz_id")
-  userId       String?          @map("user_id") // giao cho user account
+  userId       String?          @map("user_id") // giao cho tài khoản người dùng
   canBoId      String?          @map("can_bo_id") // giao cho cán bộ
   departmentId String?          @map("department_id") // giao cho phòng ban
   startAt      DateTime?        @map("start_at")
@@ -214,7 +214,7 @@ enum AssignmentStatus {
 }
 
 model Submission {
-  id            String           @id @default(uuid()) // UUID từ app — idempotent key
+  id            String           @id @default(uuid()) // UUID từ app — khóa idempotent
   userId        String           @map("user_id")
   quizId        String           @map("quiz_id")
   quizVersionId String           @map("quiz_version_id")
@@ -328,7 +328,7 @@ model SubmissionAnswer {
   id                String   @id @default(uuid())
   submissionId      String   @map("submission_id")
   questionId        String   @map("question_id")
-  selectedOptionIds Json     @map("selected_option_ids") // array of option IDs
+  selectedOptionIds Json     @map("selected_option_ids") // mảng ID của các lựa chọn
   answeredAt        DateTime @map("answered_at")
 
   submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
@@ -404,7 +404,7 @@ model ExamSession {
   endAt            DateTime          @map("end_at")
   maxAttempts      Int               @default(1) @map("max_attempts") // 0 = không giới hạn
   scoringPolicy    ScoringPolicy     @default(HIGHEST) @map("scoring_policy")
-  durationMin      Int?              @map("duration_min") // override thời gian quiz gốc
+  durationMin      Int?              @map("duration_min") // ghi đè thời gian quiz gốc
   shuffleQuestions Boolean           @default(false) @map("shuffle_questions")
   shuffleOptions   Boolean           @default(false) @map("shuffle_options")
   showResultAfter  ShowResultPolicy  @default(IMMEDIATE) @map("show_result_after")
@@ -514,7 +514,7 @@ model ArenaTeam {
   id             String   @id @default(uuid())
   arenaSessionId String   @map("arena_session_id")
   name           String
-  color          String // hex color tự động assign
+  color          String // mã màu hex, tự động gán
   score          Int      @default(0)
   rank           Int? // điền sau khi kết thúc
   joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
@@ -686,7 +686,7 @@ model LevelDefinition {
   level     Int      @unique
   name      String
   minXp     Int      @map("min_xp")
-  color     String // hex color, vd: "#4CAF50"
+  color     String // mã màu hex, vd: "#4CAF50"
   iconSlug  String?  @map("icon_slug")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

@@ -32,7 +32,7 @@ const TRAINING_ROLES = [UserRole.ADMIN, UserRole.TRAINER] as const;
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
-  // ── Subjects ──────────────────────────────────────────────────────────
+  // ── Lĩnh vực ──────────────────────────────────────────────────────────
   @Get('subjects')
   @Roles(...TRAINING_ROLES)
   getSubjects() {
@@ -60,7 +60,7 @@ export class AdminController {
     return this.adminService.deleteSubject(id);
   }
 
-  // ── Bank Questions ────────────────────────────────────────────────────
+  // ── Ngân hàng câu hỏi ─────────────────────────────────────────────────
   @Get('bank-questions')
   @Roles(...TRAINING_ROLES)
   getBankQuestions(@Query('subjectId') subjectId?: string) {
@@ -151,7 +151,7 @@ export class AdminController {
     return this.adminService.checkSpelling(body.texts);
   }
 
-  // ── Questions ─────────────────────────────────────────────────────────
+  // ── Câu hỏi ───────────────────────────────────────────────────────────
   @Get('questions')
   @Roles(...TRAINING_ROLES)
   getQuestions() {
@@ -164,7 +164,7 @@ export class AdminController {
     return this.adminService.deleteQuestion(id);
   }
 
-  // ── Quizzes ───────────────────────────────────────────────────────────
+  // ── Bộ đề ─────────────────────────────────────────────────────────────
   @Get('quizzes')
   @Roles(...TRAINING_ROLES)
   getQuizzes() {
@@ -227,7 +227,7 @@ export class AdminController {
     return this.adminService.pickRandomToQuiz(id, body);
   }
 
-  // ── Assignments ───────────────────────────────────────────────────────
+  // ── Phân công ─────────────────────────────────────────────────────────
   @Get('assignments')
   @Roles(...TRAINING_ROLES)
   getAssignments() {
@@ -246,7 +246,7 @@ export class AdminController {
   }
 
   // Các route "assignments/<tên cố định>" PHẢI khai báo TRƯỚC "assignments/:id" —
-  // Nest/Express khớp route theo thứ tự khai báo, ":id" là wildcard sẽ nuốt luôn
+  // Nest/Express khớp route theo thứ tự khai báo, ":id" là ký tự đại diện sẽ nuốt luôn
   // "extend"/"import" nếu đứng sau (đã từng dính lỗi 500 vì thứ tự sai).
   @Put('assignments/extend')
   @Roles(...TRAINING_ROLES)
@@ -301,7 +301,7 @@ export class AdminController {
     return this.adminService.deleteAssignmentsByFilter(quizId, departmentId);
   }
 
-  // ── Reports ───────────────────────────────────────────────────────────
+  // ── Báo cáo ───────────────────────────────────────────────────────────
   @Get('reports')
   @Roles(...TRAINING_ROLES)
   getReports() {
@@ -386,14 +386,14 @@ export class AdminController {
     return this.adminService.getAtRiskStaff();
   }
 
-  // ── Users ─────────────────────────────────────────────────────────────
+  // ── Người dùng ────────────────────────────────────────────────────────
   @Get('users')
   @Roles(...TRAINING_ROLES)
   getUsers() {
     return this.adminService.getUsers();
   }
 
-  // ── Academic Years ────────────────────────────────────────────────────
+  // ── Năm học ───────────────────────────────────────────────────────────
   @Get('academic-years')
   @Roles(...TRAINING_ROLES)
   getAcademicYears() {
@@ -423,7 +423,7 @@ export class AdminController {
     return this.adminService.deleteAcademicYear(id);
   }
 
-  // ── Classes ───────────────────────────────────────────────────────────
+  // ── Lớp học ───────────────────────────────────────────────────────────
   @Get('classes')
   @Roles(...TRAINING_ROLES)
   getClasses(@Query('academicYearId') academicYearId?: string) {
@@ -475,7 +475,7 @@ export class AdminController {
     return this.adminService.removeClassMember(classId, userId);
   }
 
-  // ── Exam Sessions ─────────────────────────────────────────────────────
+  // ── Đợt thi ───────────────────────────────────────────────────────────
   @Get('exam-sessions')
   @Roles(...TRAINING_ROLES)
   getExamSessions(@Query('classId') classId?: string) {
@@ -560,7 +560,7 @@ export class AdminController {
     return this.adminService.getCertificateData(id, userId);
   }
 
-  // ── Departments ───────────────────────────────────────────────────────
+  // ── Phòng ban ─────────────────────────────────────────────────────────
   @Get('departments')
   @Roles(...TRAINING_ROLES)
   getDepartments() {

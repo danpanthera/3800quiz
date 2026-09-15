@@ -21,10 +21,10 @@ export class AnswerDto {
 
 export class SubmitDto {
   @IsUUID()
-  id: string; // UUID từ app — idempotent key
+  id: string; // UUID từ app — khóa chống trùng lặp
 
   @IsString()
-  quizId: string; // có thể là UUID hoặc custom string (vd: quiz-demo-001)
+  quizId: string; // có thể là UUID hoặc chuỗi tuỳ ý (vd: quiz-demo-001)
 
   @IsString()
   quizVersionId: string;

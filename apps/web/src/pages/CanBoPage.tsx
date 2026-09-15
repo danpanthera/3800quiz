@@ -516,7 +516,7 @@ export default function CanBoPage() {
         )}
       </Modal>
 
-      {/* Modal: Import GAHR26 */}
+      {/* Modal: Nhập GAHR26 */}
       <Modal
         title="Import cán bộ từ file GAHR26"
         open={importOpen}

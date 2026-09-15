@@ -41,7 +41,7 @@ export class SubmissionsService {
   ) {}
 
   async submit(userId: string, dto: SubmitDto) {
-    // Idempotency — nếu đã tồn tại submission với ID này thì trả về luôn
+    // Chống trùng lặp — nếu đã tồn tại submission với ID này thì trả về luôn
     const existing = await this.prisma.submission.findUnique({
       where: { id: dto.id },
     });
@@ -125,7 +125,7 @@ export class SubmissionsService {
       data: { userId, action: 'SUBMIT', entityId: submission.id },
     });
 
-    // ── Gamification: award XP ────────────────────────────────────────────
+    // ── Game hóa: trao XP ───────────────────────────────────────────────────
     const isPassed = quiz ? score >= (quiz.passScore ?? 60) : false;
     await this.gamification.updateActivity(userId);
     await this.gamification.incrementSubmissionStats(userId, isPassed);
@@ -136,7 +136,7 @@ export class SubmissionsService {
       newBadges: { code: string; name: string; iconSlug: string }[];
     };
     if (score === 100) {
-      // Pass + perfect
+      // Đạt + điểm tuyệt đối
       const passResult = await this.gamification.awardXp(
         userId,
         50,
@@ -183,7 +183,7 @@ export class SubmissionsService {
   }
 
   async getResult(submissionId: string, userId: string) {
-    // Trả về null nếu chưa sync lên server thay vì throw 500
+    // Trả về null nếu chưa đồng bộ lên server thay vì trả lỗi 500
     const submission = await this.prisma.submission.findFirst({
       where: { id: submissionId, userId },
       select: {
@@ -224,7 +224,7 @@ export class SubmissionsService {
                 JSON.stringify(correctOrderIds) === JSON.stringify(selectedIds);
               const byId = new Map(q.options.map((o) => [o.id, o]));
               // Hiện theo đúng thứ tự người dùng đã sắp; đánh dấu từng mục đúng VỊ TRÍ hay không.
-              // Lọc bỏ id lạ (không thuộc snapshot câu hỏi) để không crash trang kết quả nếu dữ liệu
+              // Lọc bỏ id lạ (không thuộc snapshot câu hỏi) để trang kết quả không bị lỗi nếu dữ liệu
               // đã lưu từng lệch khỏi snapshot hiện tại — coi như chưa trả lời hợp lệ trong trường hợp đó.
               const validSelectedIds = selectedIds.filter((id) => byId.has(id));
               const displayed =

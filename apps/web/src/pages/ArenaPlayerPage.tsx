@@ -665,7 +665,7 @@ export default function ArenaPlayerPage() {
   )
 }
 
-// ─── Layout helper ──────────────────────────────────────────────────────────
+// ─── Hàm hỗ trợ bố cục ──────────────────────────────────────────────────────
 
 function CenterCard({ children }: { children: React.ReactNode }) {
   return (
