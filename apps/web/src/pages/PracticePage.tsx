@@ -145,9 +145,14 @@ export default function PracticePage() {
                     onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: [e.target.value] }))}
                   >
                     <Space direction="vertical">
-                      {q.options.map((o) => (
-                        <Radio key={o.id} value={o.id} style={optionStyle(result, o.id)}>{o.content}</Radio>
-                      ))}
+                      {q.options.map((o) => {
+                        const trangThai = trangThaiDapAn(result, answers[q.id] ?? [], o.id)
+                        return (
+                          <Radio key={o.id} value={o.id}>
+                            <span style={khungNoiBat(trangThai)}>{o.content}<IconDapAn trangThai={trangThai} /></span>
+                          </Radio>
+                        )
+                      })}
                     </Space>
                   </Radio.Group>
                 )}
@@ -160,9 +165,14 @@ export default function PracticePage() {
                     style={{ width: '100%' }}
                   >
                     <Space direction="vertical">
-                      {q.options.map((o) => (
-                        <Checkbox key={o.id} value={o.id} style={optionStyle(result, o.id)}>{o.content}</Checkbox>
-                      ))}
+                      {q.options.map((o) => {
+                        const trangThai = trangThaiDapAn(result, answers[q.id] ?? [], o.id)
+                        return (
+                          <Checkbox key={o.id} value={o.id}>
+                            <span style={khungNoiBat(trangThai)}>{o.content}<IconDapAn trangThai={trangThai} /></span>
+                          </Checkbox>
+                        )
+                      })}
                     </Space>
                   </Checkbox.Group>
                 )}
@@ -174,14 +184,19 @@ export default function PracticePage() {
                       {q.options.map((o) => {
                         const seq = answers[q.id] ?? []
                         const pos = seq.indexOf(o.id)
+                        const trangThai = trangThaiDapAn(result, seq, o.id)
                         return (
                           <Tag
                             key={o.id}
-                            style={{ cursor: results ? 'default' : 'pointer', padding: '6px 12px', fontSize: 14, ...optionStyle(result, o.id) }}
-                            color={pos >= 0 ? 'processing' : undefined}
+                            style={{
+                              cursor: results ? 'default' : 'pointer', padding: '6px 12px', fontSize: 14,
+                              ...khungNoiBat(trangThai),
+                            }}
+                            color={!trangThai && pos >= 0 ? 'processing' : undefined}
                             onClick={() => !results && toggleOrderingOption(q.id, o.id)}
                           >
                             {pos >= 0 ? `${pos + 1}. ` : ''}{o.content}
+                            <IconDapAn trangThai={trangThai} />
                           </Tag>
                         )
                       })}
@@ -189,10 +204,27 @@ export default function PracticePage() {
                   </Space>
                 )}
 
-                {result && !result.isCorrect && result.explanation && (
-                  <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
-                    Giải thích: {result.explanation}
-                  </Text>
+                {result && (result.explanation || !result.isCorrect) && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      background: result.isCorrect ? 'rgba(39,174,96,0.08)' : 'rgba(207,19,34,0.06)',
+                      borderLeft: `3px solid ${result.isCorrect ? '#27AE60' : '#CF1322'}`,
+                    }}
+                  >
+                    {!result.isCorrect && (
+                      <Text strong style={{ color: '#27AE60', display: 'block' }}>
+                        Đáp án đúng: {q.options.filter((o) => result.correctOptionIds.includes(o.id)).map((o) => o.content).join(', ')}
+                      </Text>
+                    )}
+                    {result.explanation && (
+                      <Text type="secondary" style={{ display: 'block', marginTop: !result.isCorrect ? 4 : 0 }}>
+                        Giải thích: {result.explanation}
+                      </Text>
+                    )}
+                  </div>
                 )}
               </Card>
             )
@@ -213,9 +245,37 @@ export default function PracticePage() {
   )
 }
 
-// Sau khi có kết quả: viền xanh cho đáp án đúng, đỏ cho đáp án đã chọn nhưng sai
-function optionStyle(result: PracticeGradeItem | undefined, optionId: string): CSSProperties {
-  if (!result) return {}
-  if (result.correctOptionIds.includes(optionId)) return { color: '#27AE60', fontWeight: 600 }
-  return {}
+// Sau khi có kết quả: bọc đáp án đúng bằng khung nền xanh nổi bật, đáp án đã chọn
+// nhưng sai bọc khung nền đỏ. Không đổi MÀU CHỮ trực tiếp trên khung — antd tự ép
+// màu chữ xám khi Radio/Checkbox bị disabled (sau khi nộp), đè mất màu chữ tuỳ
+// chỉnh; nền/viền thì không bị ép nên vẫn hiển thị đúng. Icon đánh dấu tô màu
+// TRỰC TIẾP trên chính nó (không kế thừa) nên vẫn giữ được màu xanh/đỏ.
+function trangThaiDapAn(
+  result: PracticeGradeItem | undefined,
+  daChon: string[],
+  optionId: string,
+): 'dung' | 'sai' | null {
+  if (!result) return null
+  if (result.correctOptionIds.includes(optionId)) return 'dung'
+  if (daChon.includes(optionId)) return 'sai'
+  return null
+}
+
+function khungNoiBat(trangThai: 'dung' | 'sai' | null): CSSProperties | undefined {
+  if (!trangThai) return undefined
+  const mau = trangThai === 'dung' ? '#27AE60' : '#CF1322'
+  return {
+    background: trangThai === 'dung' ? 'rgba(39,174,96,0.14)' : 'rgba(207,19,34,0.1)',
+    border: `1px solid ${mau}`,
+    borderRadius: 6,
+    padding: '2px 10px',
+  }
+}
+
+function IconDapAn({ trangThai }: { trangThai: 'dung' | 'sai' | null }) {
+  if (!trangThai) return null
+  const mau = trangThai === 'dung' ? '#27AE60' : '#CF1322'
+  return trangThai === 'dung'
+    ? <CheckCircleFilled style={{ color: mau, marginLeft: 6 }} />
+    : <CloseCircleFilled style={{ color: mau, marginLeft: 6 }} />
 }
