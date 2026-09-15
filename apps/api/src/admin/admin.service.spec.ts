@@ -240,8 +240,196 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
       data: {
         userId: 'admin-1',
         action: 'RESET_CAN_BO_PASSWORDS',
-        meta: { canBoIds: ['c1'], reset: 1, noAccount: 0 },
+        meta: {
+          canBoIds: ['c1'],
+          reset: 1,
+          noAccount: 0,
+          skippedAD: 0,
+          mode: 'random',
+          forceChangeOnLogin: true,
+        },
       },
+    });
+  });
+
+  it('resetCanBoPasswords bỏ qua tài khoản AD — không đụng mật khẩu, không bắt đổi mật khẩu', async () => {
+    const prisma = {
+      canBo: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'c1',
+            cbCode: 'CB001',
+            fullName: 'Nguyễn Văn A',
+            userAD: 'nguyenvana',
+          },
+        ]),
+      },
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'user-1', authSource: 'AD' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.resetCanBoPasswords(['c1'], 'admin-1');
+
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(result.reset).toBe(0);
+    expect(result.skippedAD).toBe(1);
+    expect(result.details[0]).toEqual(
+      expect.objectContaining({ fullName: 'Nguyễn Văn A', skippedAD: true }),
+    );
+  });
+});
+
+describe('AdminService — đồng bộ Đăng nhập bằng AD khi lưu Cán bộ', () => {
+  function buildTx(overrides: Record<string, unknown> = {}) {
+    return {
+      canBo: {
+        create: jest.fn(),
+        update: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+      },
+      user: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      ...overrides,
+    };
+  }
+
+  it('createCanBo với dangNhapBangAD=true → User tạo mới ở authSource AD, không bắt đổi mật khẩu', async () => {
+    const tx = buildTx();
+    tx.canBo.create.mockResolvedValue({
+      id: 'canbo-1',
+      cbCode: 'CB001',
+      fullName: 'Nguyễn Văn A',
+      email: null,
+      departmentId: null,
+      isActive: true,
+      userAD: 'nguyenvana',
+      dangNhapBangAD: true,
+    });
+    tx.canBo.findUniqueOrThrow.mockResolvedValue({ id: 'canbo-1' });
+    const prisma = {
+      canBo: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await service.createCanBo({
+      cbCode: 'CB001',
+      fullName: 'Nguyễn Văn A',
+      userAD: 'nguyenvana',
+      dangNhapBangAD: true,
+    });
+
+    expect(tx.user.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        username: 'nguyenvana',
+        authSource: 'AD',
+        mustChangePassword: false,
+      }),
+    });
+  });
+
+  it('updateCanBo bật dangNhapBangAD cho User đã có (đang LOCAL) → đổi authSource, tắt luôn bắt-đổi-mật-khẩu, không đụng passwordHash', async () => {
+    const tx = buildTx({
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'user-1', authSource: 'LOCAL' }),
+        create: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    });
+    tx.canBo.update.mockResolvedValue({
+      id: 'canbo-1',
+      cbCode: 'CB001',
+      fullName: 'Nguyễn Văn A',
+      email: null,
+      departmentId: null,
+      isActive: true,
+      userAD: 'nguyenvana',
+      dangNhapBangAD: true,
+    });
+    tx.canBo.findUniqueOrThrow.mockResolvedValue({ id: 'canbo-1' });
+    const prisma = {
+      canBo: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'canbo-1',
+          cbCode: 'CB001',
+          userAD: 'nguyenvana',
+        }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await service.updateCanBo('canbo-1', { dangNhapBangAD: true });
+
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: expect.objectContaining({
+        authSource: 'AD',
+        mustChangePassword: false,
+      }),
+    });
+    const dataDaGoi = tx.user.update.mock.calls[0][0].data;
+    expect(dataDaGoi.passwordHash).toBeUndefined();
+  });
+
+  it('updateCanBo tắt dangNhapBangAD (đang AD) → cấp lại mật khẩu mặc định, bắt đổi mật khẩu', async () => {
+    const tx = buildTx({
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'user-1', authSource: 'AD' }),
+        create: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    });
+    tx.canBo.update.mockResolvedValue({
+      id: 'canbo-1',
+      cbCode: 'CB001',
+      fullName: 'Nguyễn Văn A',
+      email: null,
+      departmentId: null,
+      isActive: true,
+      userAD: 'nguyenvana',
+      dangNhapBangAD: false,
+    });
+    tx.canBo.findUniqueOrThrow.mockResolvedValue({ id: 'canbo-1' });
+    const prisma = {
+      canBo: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'canbo-1',
+          cbCode: 'CB001',
+          userAD: 'nguyenvana',
+        }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await service.updateCanBo('canbo-1', { dangNhapBangAD: false });
+
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: expect.objectContaining({
+        authSource: 'LOCAL',
+        mustChangePassword: true,
+        passwordHash: expect.any(String),
+      }),
     });
   });
 });

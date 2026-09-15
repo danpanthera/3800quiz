@@ -10,6 +10,7 @@ import {
 import { AuthService } from './auth.service';
 import { getJwtSecret } from './jwt-secret';
 import { JwtStrategy } from './jwt.strategy';
+import { LdapAuthService } from './ldap.service';
 import { LoginThrottlerGuard } from './login-throttler.guard';
 import { RolesGuard } from './roles.guard';
 
@@ -26,7 +27,13 @@ import { RolesGuard } from './roles.guard';
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 5 }]),
   ],
   controllers: [AuthController, SecurityController, AdminSecurityController],
-  providers: [AuthService, JwtStrategy, RolesGuard, LoginThrottlerGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RolesGuard,
+    LoginThrottlerGuard,
+    LdapAuthService,
+  ],
   exports: [JwtModule, RolesGuard],
 })
 export class AuthModule {}

@@ -43,3 +43,8 @@ apps/web/Mau/**/GAHR26*
 # theo dõi bằng git (~300MB+ toàn kho). Đưa lên PROD bằng cách chép thư mục qua
 # USB, không phải "git pull" — xem DEPLOYMENT.md, Phụ lục E.
 /assets/giong-doc/
+
+# Chứng chỉ CA gốc nội bộ ngân hàng (vd CA-AD của corp.agribank.com.vn) để
+# container api tin cậy khi bind LDAPS tới RODC — xuất từ máy đã join domain,
+# chép thủ công vào đây trên PROD, KHÔNG qua git — xem LDAP.md.
+/certs/

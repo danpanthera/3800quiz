@@ -600,10 +600,20 @@ export class AdminController {
 
   @Post('can-bo/reset-passwords')
   resetCanBoPasswords(
-    @Body() body: { ids: string[] },
+    @Body()
+    body: {
+      ids: string[];
+      mode?: 'random' | 'custom';
+      customPassword?: string;
+      forceChangeOnLogin?: boolean;
+    },
     @Request() req: { user: { id: string } },
   ) {
-    return this.adminService.resetCanBoPasswords(body.ids, req.user.id);
+    return this.adminService.resetCanBoPasswords(body.ids, req.user.id, {
+      mode: body.mode,
+      customPassword: body.customPassword,
+      forceChangeOnLogin: body.forceChangeOnLogin,
+    });
   }
 
   @Delete('can-bo/bulk')

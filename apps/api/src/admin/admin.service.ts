@@ -7,6 +7,7 @@ import {
 import {
   AssignmentStatus,
   AttemptViolationType,
+  AuthSource,
   Prisma,
   QuestionType,
   XpSource,
@@ -16,6 +17,10 @@ import { GamificationService } from '../gamification/gamification.service';
 import { ImportBankQuestionRowDto } from './dto/import-bank-questions.dto';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
+import {
+  sinhMatKhauNgauNhienChoTaiKhoanAD,
+  sinhMatKhauNgauNhienDeDoc,
+} from '../common/mat-khau-ad.util';
 
 type NSpellChecker = {
   correct(word: string): boolean;
@@ -96,6 +101,7 @@ export class AdminService {
     'email',
     'phoneNumber',
     'userAD',
+    'dangNhapBangAD',
     'userIPCAS',
     'maCbtd',
     'cccd',
@@ -254,6 +260,7 @@ export class AdminService {
       departmentId: string | null;
       isActive: boolean;
       userAD: string | null;
+      dangNhapBangAD: boolean;
     },
     previousCbCode?: string,
     previousUserAD?: string | null,
@@ -301,20 +308,37 @@ export class AdminService {
     }
 
     if (!user) {
+      // Bật "Đăng nhập bằng AD" thì không dùng mật khẩu mặc định nữa — đăng
+      // nhập ngay bằng đúng mật khẩu AD. passwordHash vẫn phải có giá trị
+      // (cột NOT NULL) nhưng là chuỗi ngẫu nhiên không ai biết, không bao giờ
+      // được so khớp (xem authSource AD ở auth.service.ts).
+      const dungAD = canBo.dangNhapBangAD;
       await tx.user.create({
         data: {
           username,
           fullName: canBo.fullName,
           email: canBo.email ?? undefined,
-          passwordHash: await bcrypt.hash('Abcd@1234', 10),
+          passwordHash: await bcrypt.hash(
+            dungAD ? sinhMatKhauNgauNhienChoTaiKhoanAD() : 'Abcd@1234',
+            10,
+          ),
           role: 'STAFF',
           isActive: canBo.isActive,
-          mustChangePassword: true,
+          authSource: dungAD ? 'AD' : 'LOCAL',
+          mustChangePassword: !dungAD,
           departmentId: canBo.departmentId ?? undefined,
         },
       });
       return;
     }
+
+    const authSourceMoi: AuthSource = canBo.dangNhapBangAD ? 'AD' : 'LOCAL';
+    // Chuyển từ AD về nội bộ: passwordHash cũ (nếu có) là chuỗi ngẫu nhiên
+    // không ai biết (tài khoản trước giờ chỉ đăng nhập qua AD) — cấp lại về
+    // đúng mật khẩu mặc định như khi tạo tài khoản mới, bắt đổi ở lần đăng
+    // nhập kế tiếp (giống hệt luồng resetCanBoPasswords).
+    const chuyenVeNoiBo =
+      user.authSource === 'AD' && authSourceMoi === 'LOCAL';
 
     await tx.user.update({
       where: { id: user.id },
@@ -324,6 +348,20 @@ export class AdminService {
         email: canBo.email ?? undefined,
         isActive: canBo.isActive,
         departmentId: canBo.departmentId ?? undefined,
+        authSource: authSourceMoi,
+        // Tài khoản AD KHÔNG BAO GIỜ được bắt đổi mật khẩu nội bộ — màn hình
+        // đó đòi nhập đúng "mật khẩu cũ" khớp passwordHash, mà với tài khoản
+        // AD giá trị đó là chuỗi ngẫu nhiên không ai biết → kẹt cứng, không
+        // ai vào được nữa. Phải tắt cờ này ngay khi bật AD, không chỉ lúc tạo
+        // mới (nhánh !user ở trên).
+        ...(authSourceMoi === 'AD'
+          ? { mustChangePassword: false }
+          : chuyenVeNoiBo
+            ? {
+                passwordHash: await bcrypt.hash('Abcd@1234', 10),
+                mustChangePassword: true,
+              }
+            : {}),
       },
     });
   }
@@ -2264,6 +2302,7 @@ export class AdminService {
     email?: string;
     phoneNumber?: string;
     userAD?: string;
+    dangNhapBangAD?: boolean;
     userIPCAS?: string;
     maCbtd?: string;
     cccd?: string;
@@ -2366,7 +2405,25 @@ export class AdminService {
     return { deleted: result.count };
   }
 
-  async resetCanBoPasswords(ids: string[], actorUserId?: string) {
+  async resetCanBoPasswords(
+    ids: string[],
+    actorUserId?: string,
+    tuyChon: {
+      mode?: 'random' | 'custom';
+      customPassword?: string;
+      forceChangeOnLogin?: boolean;
+    } = {},
+  ) {
+    const mode = tuyChon.mode ?? 'random';
+    const forceChangeOnLogin = tuyChon.forceChangeOnLogin ?? true;
+    if (mode === 'custom') {
+      if (!tuyChon.customPassword || tuyChon.customPassword.length < 6) {
+        throw new BadRequestException(
+          'Mật khẩu tự chọn phải tối thiểu 6 ký tự',
+        );
+      }
+    }
+
     const canBoList = await this.prisma.canBo.findMany({
       where: { id: { in: ids } },
       select: { id: true, cbCode: true, fullName: true, userAD: true },
@@ -2374,9 +2431,14 @@ export class AdminService {
 
     let reset = 0;
     const noAccount: string[] = [];
-    const details: { fullName: string; cbCode: string; ok: boolean }[] = [];
-
-    const hash = await bcrypt.hash('Abcd@1234', 10);
+    let skippedAD = 0;
+    const details: {
+      fullName: string;
+      cbCode: string;
+      ok: boolean;
+      skippedAD?: boolean;
+      newPassword?: string;
+    }[] = [];
 
     for (const cb of canBoList) {
       const user = await this.prisma.user.findUnique({
@@ -2387,23 +2449,64 @@ export class AdminService {
         details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: false });
         continue;
       }
+      // Tài khoản AD: mật khẩu nội bộ vô nghĩa (không dùng để đăng nhập) và
+      // nguy hiểm — bật mustChangePassword sẽ bắt đổi 1 mật khẩu mà chính
+      // người dùng không biết, khoá luôn không vào được nữa. Bỏ qua.
+      if (user.authSource === 'AD') {
+        skippedAD++;
+        details.push({
+          fullName: cb.fullName,
+          cbCode: cb.cbCode,
+          ok: false,
+          skippedAD: true,
+        });
+        continue;
+      }
+
+      // 'custom' → cùng 1 mật khẩu admin gõ cho mọi người được chọn; 'random'
+      // → MỖI người 1 mật khẩu ngẫu nhiên riêng (không ai đoán được của ai).
+      const matKhauMoi =
+        mode === 'custom'
+          ? tuyChon.customPassword!
+          : sinhMatKhauNgauNhienDeDoc();
+      const hash = await bcrypt.hash(matKhauMoi, 10);
       await this.prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash: hash, mustChangePassword: true },
+        data: { passwordHash: hash, mustChangePassword: forceChangeOnLogin },
       });
       reset++;
-      details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: true });
+      details.push({
+        fullName: cb.fullName,
+        cbCode: cb.cbCode,
+        ok: true,
+        newPassword: matKhauMoi,
+      });
     }
 
     await this.prisma.auditLog.create({
       data: {
         userId: actorUserId,
         action: 'RESET_CAN_BO_PASSWORDS',
-        meta: { canBoIds: ids, reset, noAccount: noAccount.length },
+        // KHÔNG log mật khẩu thật vào audit log dù chỉ để tham chiếu — chỉ
+        // log chế độ đã dùng, không log giá trị mật khẩu.
+        meta: {
+          canBoIds: ids,
+          reset,
+          noAccount: noAccount.length,
+          skippedAD,
+          mode,
+          forceChangeOnLogin,
+        },
       },
     });
 
-    return { reset, noAccount: noAccount.length, details };
+    return {
+      reset,
+      noAccount: noAccount.length,
+      skippedAD,
+      forceChangeOnLogin,
+      details,
+    };
   }
 
   // Đọc workbook từ buffer upload.

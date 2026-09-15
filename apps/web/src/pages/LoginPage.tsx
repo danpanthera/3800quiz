@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Form, Input, Button, Typography, message } from 'antd'
 import { BankOutlined, UserOutlined, LockOutlined, SafetyOutlined } from '@ant-design/icons'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api, { getErrorMessage } from '../lib/api'
 import { useAuth } from '../lib/useAuth'
+import { xoaSachCacheTrinhDuyet } from '../lib/auth'
 
 const { Title, Text } = Typography
 
@@ -21,6 +22,13 @@ export default function LoginPage() {
   // Tài khoản bật xác thực 2 lớp: bước 1 chỉ trả pendingToken, phải nhập tiếp
   // mã 6 chữ số ở bước 2 mới lấy được access token thật.
   const [pendingToken, setPendingToken] = useState<string | null>(null)
+
+  // Máy dùng chung nhiều cán bộ (quầy/phòng giao dịch) — mỗi lần quay lại màn
+  // đăng nhập là một lượt "vào web" mới, xoá sạch cache/localStorage còn sót
+  // của phiên trước đó trước khi cán bộ tiếp theo gõ mật khẩu của họ vào.
+  useEffect(() => {
+    void xoaSachCacheTrinhDuyet()
+  }, [])
 
   const finishLogin = (data: LoginResponse) => {
     if (!data.accessToken || !data.user) return

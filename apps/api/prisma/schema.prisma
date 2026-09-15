@@ -18,6 +18,13 @@ model User {
   departmentId       String?   @map("department_id")
   role               UserRole  @default(STAFF)
   isActive           Boolean   @default(true) @map("is_active")
+  // Đăng nhập bằng mật khẩu nội bộ (bcrypt, cột passwordHash) hay bằng đúng
+  // mật khẩu Windows/AD qua RODC (bind pass-through — không lưu, không đồng
+  // bộ mật khẩu AD về phía mình, xem ldap.service.ts). Bật/tắt theo từng
+  // người ở ô "Đăng nhập bằng AD" trên trang Quản lý cán bộ (đồng bộ tự động
+  // từ CanBo.dangNhapBangAD, xem admin.service.ts:syncCanBoUser) — KHÔNG tự ý
+  // đổi trực tiếp ở đây, sẽ bị ghi đè lại theo CanBo lần sync kế tiếp.
+  authSource         AuthSource @default(LOCAL) @map("auth_source")
   mustChangePassword Boolean   @default(true) @map("must_change_password")
   // Khóa tài khoản tạm sau nhiều lần đăng nhập sai liên tiếp — xem
   // auth.service.ts (ngưỡng khóa, thời gian khóa). Reset về 0/null khi đăng
@@ -51,6 +58,13 @@ enum UserRole {
   TRAINER
 
   @@map("user_role")
+}
+
+enum AuthSource {
+  LOCAL
+  AD
+
+  @@map("auth_source")
 }
 
 model Department {
@@ -631,6 +645,12 @@ model CanBo {
   email              String?
   phoneNumber        String?   @map("phone_number")
   userAD             String?   @map("user_ad")
+  // Cho phép cán bộ này đăng nhập 3800Quiz bằng đúng mật khẩu AD/Windows của
+  // họ (qua RODC nội bộ ngân hàng) thay vì mật khẩu nội bộ của riêng ứng
+  // dụng. Cần có userAD thì bật mới có tác dụng (userAD chính là tên đăng
+  // nhập dùng để bind AD). Đồng bộ sang User.authSource mỗi lần lưu — xem
+  // admin.service.ts:syncCanBoUser.
+  dangNhapBangAD     Boolean   @default(false) @map("dang_nhap_bang_ad")
   userIPCAS          String?   @map("user_ipcas")
   maCbtd             String?   @map("ma_cbtd")
   cccd               String?

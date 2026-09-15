@@ -4,12 +4,15 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { buildOtpauthUrl, generateTotpSecret, verifyTotpCode } from './totp';
 import * as bcrypt from 'bcrypt';
+import { sinhMatKhauNgauNhienChoTaiKhoanAD } from '../common/mat-khau-ad.util';
+import { LdapAuthService } from './ldap.service';
 
 const DEFAULT_PASSWORD = 'Abcd@1234';
 
@@ -42,6 +45,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly ldapAuthService: LdapAuthService,
   ) {}
 
   async login(dto: LoginDto, meta: LoginMeta = {}) {
@@ -63,8 +67,17 @@ export class AuthService {
         include: { department: true },
       });
       if (canBo) {
-        const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
         const username = canBo.userAD?.trim() || canBo.cbCode;
+        // Cán bộ được bật "Đăng nhập bằng AD": đăng nhập ngay bằng đúng mật
+        // khẩu AD hiện có, không cần chờ cấp mật khẩu mặc định. passwordHash
+        // vẫn phải có giá trị (cột NOT NULL) nhưng là chuỗi ngẫu nhiên không
+        // ai biết và không bao giờ được so khớp (xem nhánh authSource AD bên
+        // dưới), không bắt đổi mật khẩu nội bộ.
+        const dungAD = canBo.dangNhapBangAD;
+        const passwordHash = await bcrypt.hash(
+          dungAD ? sinhMatKhauNgauNhienChoTaiKhoanAD() : DEFAULT_PASSWORD,
+          10,
+        );
         user = await this.prisma.user.create({
           data: {
             username,
@@ -73,7 +86,8 @@ export class AuthService {
             passwordHash,
             role: 'STAFF',
             isActive: true,
-            mustChangePassword: true,
+            authSource: dungAD ? 'AD' : 'LOCAL',
+            mustChangePassword: !dungAD,
             departmentId: canBo.departmentId ?? undefined,
           },
           include: { department: true },
@@ -89,10 +103,29 @@ export class AuthService {
 
     this.assertNotLocked(user.lockedUntil);
 
-    const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!isMatch) {
-      await this.registerFailedAttempt(user.id);
-      throw new UnauthorizedException('Sai mật khẩu');
+    if (user.authSource === 'AD') {
+      const ketQua = await this.ldapAuthService.binhBangMatKhauAD(
+        user.username,
+        dto.password,
+      );
+      if (!ketQua.ok) {
+        if (ketQua.lyDo === 'saiMatKhau') {
+          await this.registerFailedAttempt(user.id);
+          throw new UnauthorizedException('Sai mật khẩu');
+        }
+        // Lỗi hạ tầng phía AD/RODC — không phải lỗi người dùng, không tính
+        // vào bộ đếm khoá tài khoản, và (fail-closed) KHÔNG được lùi về so
+        // khớp mật khẩu nội bộ.
+        throw new ServiceUnavailableException(
+          'Không kết nối được máy chủ xác thực AD, vui lòng thử lại sau',
+        );
+      }
+    } else {
+      const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!isMatch) {
+        await this.registerFailedAttempt(user.id);
+        throw new UnauthorizedException('Sai mật khẩu');
+      }
     }
 
     await this.clearFailedAttempts(user.id);

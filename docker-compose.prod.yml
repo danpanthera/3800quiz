@@ -100,9 +100,25 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://quiz.vbaquangbinh.com}
+      # smtp.agribank.com.vn / RODC dùng chứng chỉ do CA nội bộ ngân hàng cấp —
+      # Node mặc định không biết CA này (khác máy Windows join domain, tự nhận
+      # qua GPO). Rỗng thì Node bỏ qua, không lỗi — chỉ cần khi bật "Đăng nhập
+      # bằng AD". Xem LDAP.md.
+      NODE_EXTRA_CA_CERTS: ${LDAP_CA_CERT_PATH:-}
+      # Đăng nhập bằng mật khẩu AD qua RODC (bind pass-through, bật theo từng
+      # cán bộ ở trang Quản lý cán bộ) — để trống thì dùng đúng địa chỉ RODC
+      # đã dò được (xem ldap.service.ts), chỉ cần đặt nếu đổi máy chủ RODC.
+      LDAP_URL: ${LDAP_URL:-}
+      LDAP_BIND_TEMPLATE: ${LDAP_BIND_TEMPLATE:-}
+      LDAP_TIMEOUT_MS: ${LDAP_TIMEOUT_MS:-}
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # Chứng chỉ CA gốc nội bộ ngân hàng (vd CA-AD) để container tin cậy khi
+      # bind LDAPS tới RODC — thư mục rỗng vẫn mount được, không bắt buộc phải
+      # có file nếu chưa bật tính năng "Đăng nhập bằng AD". Xem LDAP.md.
+      - ./certs:/app/certs:ro
     healthcheck:
       # node:22-alpine không có curl; Node 22 đã có sẵn fetch() toàn cục.
       test:

@@ -1,6 +1,27 @@
 import { useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { isUserRole } from './permissions'
 import { AuthContext, type AuthUser } from './useAuth'
+
+// Xoá sạch mọi dấu vết phía trình duyệt — máy tính tại quầy/phòng giao dịch
+// dùng chung nhiều cán bộ, không được để cán bộ sau thấy/kế thừa bất cứ gì
+// của cán bộ trước: localStorage (token, user, tuỳ chọn giọng đọc...),
+// sessionStorage, và cache asset tĩnh của service worker (Cache Storage API —
+// KHÔNG có đề thi/điểm số trong đó, xem ghi chú workbox ở vite.config.ts,
+// nhưng vẫn xoá cho triệt để theo đúng yêu cầu). Gọi ở CẢ 2 đầu: logout() bên
+// dưới và lúc vào LoginPage (LoginPage.tsx).
+export async function xoaSachCacheTrinhDuyet(): Promise<void> {
+  localStorage.clear()
+  sessionStorage.clear()
+  if (typeof caches !== 'undefined') {
+    try {
+      const tenCacheHienCo = await caches.keys()
+      await Promise.all(tenCacheHienCo.map((ten) => caches.delete(ten)))
+    } catch {
+      // Trình duyệt/ngữ cảnh không hỗ trợ Cache API (VD Safari riêng tư) — bỏ qua, không chặn luồng chính.
+    }
+  }
+}
 
 function getStoredUser(): AuthUser | null {
   const raw = localStorage.getItem('user')
@@ -31,6 +52,7 @@ function getStoredUser(): AuthUser | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
   const [user, setUser] = useState<AuthUser | null>(getStoredUser)
 
@@ -49,8 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+    queryClient.clear()
+    void xoaSachCacheTrinhDuyet()
     setToken(null)
     setUser(null)
   }

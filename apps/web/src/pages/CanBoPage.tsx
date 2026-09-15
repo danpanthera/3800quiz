@@ -2,7 +2,7 @@ import { useState } from 'react'
 import React from 'react'
 import {
   App, Button, Table, Space, Modal, Form, Input, Select, Popconfirm,
-  Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert,
+  Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert, Radio,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, IdcardOutlined, LockOutlined, UploadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -48,7 +48,7 @@ function positionRank(pos?: string | null): number {
 }
 interface CanBoItem {
   id: string; cbCode: string; fullName: string; username?: string;
-  email?: string; phoneNumber?: string; userAD?: string; userIPCAS?: string;
+  email?: string; phoneNumber?: string; userAD?: string; dangNhapBangAD?: boolean; userIPCAS?: string;
   maCbtd?: string; cccd?: string; ngayCapCmt?: string; noiCapCmt?: string;
   ngaySinh?: string; gioiTinh?: string; departmentId?: string;
   department?: { id: string; name: string; code: string; parent?: { id: string; name: string; code: string } | null };
@@ -70,8 +70,14 @@ export default function CanBoPage() {
   const [filterDeptId, setFilterDeptId] = useState<string | undefined>()
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [pageSize, setPageSize] = useState(50)
+  const [resetForm] = Form.useForm()
+  const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [resetTargetIds, setResetTargetIds] = useState<string[] | null>(null)
   const [resetResultOpen, setResetResultOpen] = useState(false)
-  const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; details: { fullName: string; cbCode: string; ok: boolean }[] } | null>(null)
+  const [resetResult, setResetResult] = useState<{
+    reset: number; noAccount: number; skippedAD: number; forceChangeOnLogin: boolean;
+    details: { fullName: string; cbCode: string; ok: boolean; skippedAD?: boolean; newPassword?: string }[]
+  } | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [importResult, setImportResult] = useState<{
     created: number; updated: number; skipped: number; errors: string[];
@@ -112,14 +118,22 @@ export default function CanBoPage() {
   })
 
   const resetMut = useMutation({
-    mutationFn: (ids: string[]) => api.post('/admin/can-bo/reset-passwords', { ids }).then(r => r.data),
+    mutationFn: (body: { ids: string[]; mode: 'random' | 'custom'; customPassword?: string; forceChangeOnLogin: boolean }) =>
+      api.post('/admin/can-bo/reset-passwords', body).then(r => r.data),
     onSuccess: (data) => {
       setSelectedRowKeys([])
+      setResetModalOpen(false)
       setResetResult(data)
       setResetResultOpen(true)
     },
-    onError: () => message.error('Lỗi khi reset mật khẩu'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi reset mật khẩu')),
   })
+
+  const openResetModal = (ids: string[]) => {
+    setResetTargetIds(ids)
+    resetForm.setFieldsValue({ mode: 'random', customPassword: undefined, forceChangeOnLogin: true })
+    setResetModalOpen(true)
+  }
 
   const bulkDeleteMut = useMutation({
     mutationFn: (ids: string[]) => api.delete('/admin/can-bo/bulk', { data: { ids } }).then(r => r.data),
@@ -149,7 +163,8 @@ export default function CanBoPage() {
     setEditing(null)
     setFormUnitId(undefined)
     form.resetFields()
-    form.setFieldsValue({ isActive: true })
+    // Mặc định TẮT — riêng 3800quiz (7800quiz mặc định bật, xem schema.prisma)
+    form.setFieldsValue({ isActive: true, dangNhapBangAD: false })
     setModalOpen(true)
   }
 
@@ -165,6 +180,7 @@ export default function CanBoPage() {
       fullName: record.fullName,
       email: record.email,
       userAD: record.userAD,
+      dangNhapBangAD: record.dangNhapBangAD,
       gioiTinh: record.gioiTinh,
       position: record.position,
       isActive: record.isActive,
@@ -229,14 +245,7 @@ export default function CanBoPage() {
   const renderCanBoActions = (record: CanBoItem) => (
     <Space>
       <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-      <Popconfirm
-        title={`Reset MK về "Abcd@1234"?`}
-        description="Mật khẩu mới = Abcd@1234 (mặc định)"
-        onConfirm={() => resetMut.mutate([record.id])}
-        okText="Reset" cancelText="Hủy"
-      >
-        <Button size="small" icon={<LockOutlined />} title="Reset mật khẩu" />
-      </Popconfirm>
+      <Button size="small" icon={<LockOutlined />} title="Reset mật khẩu" onClick={() => openResetModal([record.id])} />
       <Popconfirm title="Xác nhận xóa cán bộ này?" onConfirm={() => deleteMut.mutate(record.id)} okText="Xóa" cancelText="Hủy">
         <Button size="small" danger icon={<DeleteOutlined />} />
       </Popconfirm>
@@ -248,6 +257,12 @@ export default function CanBoPage() {
     { title: 'Mã CB', dataIndex: 'cbCode', width: 110, sorter: (a: CanBoItem, b: CanBoItem) => a.cbCode.localeCompare(b.cbCode) },
     { title: 'Họ tên', dataIndex: 'fullName', width: 180 },
     { title: 'UserAD', dataIndex: 'userAD', width: 130 },
+    {
+      title: 'Đăng nhập', dataIndex: 'dangNhapBangAD', width: 110,
+      render: (v: boolean) => v
+        ? <Tag color="blue">Bằng AD</Tag>
+        : <Tag>Nội bộ</Tag>,
+    },
     { title: 'Phòng ban', dataIndex: ['department', 'name'], width: 200,
       render: (_: unknown, r: CanBoItem) => r.department
         ? <span>{r.department.name}</span>
@@ -311,16 +326,9 @@ export default function CanBoPage() {
           <Button icon={<UploadOutlined />} onClick={() => { setImportResult(null); setImportOpen(true) }}>Import GAHR26</Button>
           {selectedRowKeys.length > 0 && (
             <>
-              <Popconfirm
-                title={`Reset mật khẩu ${selectedRowKeys.length} cán bộ?`}
-                description="Mật khẩu mới của mỗi người = Abcd@1234 (mặc định)"
-                onConfirm={() => resetMut.mutate(selectedRowKeys as string[])}
-                okText="Reset" cancelText="Hủy"
-              >
-                <Button icon={<LockOutlined />} loading={resetMut.isPending} danger>
-                  Reset MK ({selectedRowKeys.length})
-                </Button>
-              </Popconfirm>
+              <Button icon={<LockOutlined />} danger onClick={() => openResetModal(selectedRowKeys as string[])}>
+                Reset MK ({selectedRowKeys.length})
+              </Button>
               <Popconfirm
                 title={`Xóa ${selectedRowKeys.length} cán bộ đã chọn?`}
                 description="Hành động này không thể hoàn tác. Tài khoản đăng nhập liên kết cũng sẽ bị xóa."
@@ -372,6 +380,12 @@ export default function CanBoPage() {
               : '-',
           },
           { label: 'Chức vụ', render: (record) => record.position ?? '-' },
+          {
+            label: 'Đăng nhập',
+            render: (record) => record.dangNhapBangAD
+              ? <Tag color="blue">Bằng AD</Tag>
+              : <Tag>Nội bộ</Tag>,
+          },
         ]}
         cardActions={renderCanBoActions}
       />
@@ -410,6 +424,18 @@ export default function CanBoPage() {
             <Col span={12}>
               <Form.Item name="userAD" label="User AD (tên đăng nhập)">
                 <Input placeholder="Dùng để đăng nhập" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                name="dangNhapBangAD"
+                label="Đăng nhập bằng AD"
+                valuePropName="checked"
+                extra="Bật thì cán bộ đăng nhập bằng đúng mật khẩu AD/Windows của họ (qua RODC nội bộ ngân hàng) thay vì mật khẩu nội bộ — cần điền User AD ở trên thì mới có tác dụng. Tắt (mặc định) thì đăng nhập bằng mật khẩu nội bộ như từ trước tới nay."
+              >
+                <Switch checkedChildren="Bằng AD" unCheckedChildren="Nội bộ" />
               </Form.Item>
             </Col>
           </Row>
@@ -480,6 +506,58 @@ export default function CanBoPage() {
         </Form>
       </Modal>
 
+      {/* Modal: chọn kiểu mật khẩu mới + có bắt đổi mật khẩu sau đăng nhập không */}
+      <Modal
+        title={`Reset mật khẩu${resetTargetIds ? ` — ${resetTargetIds.length} cán bộ` : ''}`}
+        open={resetModalOpen}
+        onCancel={() => setResetModalOpen(false)}
+        onOk={() => resetForm.submit()}
+        confirmLoading={resetMut.isPending}
+        okText="Reset" okButtonProps={{ danger: true }}
+        cancelText="Hủy"
+      >
+        <Form
+          form={resetForm}
+          layout="vertical"
+          initialValues={{ mode: 'random', forceChangeOnLogin: true }}
+          onFinish={(values: { mode: 'random' | 'custom'; customPassword?: string; forceChangeOnLogin: boolean }) => {
+            if (!resetTargetIds) return
+            resetMut.mutate({ ids: resetTargetIds, ...values })
+          }}
+        >
+          <Form.Item name="mode" label="Mật khẩu mới">
+            <Radio.Group>
+              <Space direction="vertical">
+                <Radio value="random">Ngẫu nhiên — mỗi người 1 mật khẩu riêng, không ai đoán được của ai</Radio>
+                <Radio value="custom">Tự chọn — cùng 1 mật khẩu cho tất cả người được chọn</Radio>
+              </Space>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.mode !== cur.mode}>
+            {({ getFieldValue }) => getFieldValue('mode') === 'custom' && (
+              <Form.Item
+                name="customPassword"
+                label="Mật khẩu tự chọn"
+                rules={[
+                  { required: true, message: 'Nhập mật khẩu' },
+                  { min: 6, message: 'Tối thiểu 6 ký tự' },
+                ]}
+              >
+                <Input.Password placeholder="Tối thiểu 6 ký tự" autoComplete="new-password" />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item
+            name="forceChangeOnLogin"
+            label="Bắt buộc đổi mật khẩu sau khi đăng nhập thành công"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="Bắt buộc" unCheckedChildren="Không bắt buộc" />
+          </Form.Item>
+          <p style={{ color: '#888', fontSize: 12, marginTop: -8 }}>Tài khoản AD (đăng nhập bằng mật khẩu Windows) sẽ tự động bị bỏ qua — mật khẩu nội bộ không áp dụng cho các tài khoản đó.</p>
+        </Form>
+      </Modal>
+
       {/* Modal: Kết quả reset mật khẩu */}
       <Modal
         title="Kết quả reset mật khẩu"
@@ -488,14 +566,20 @@ export default function CanBoPage() {
         onCancel={() => setResetResultOpen(false)}
         cancelButtonProps={{ style: { display: 'none' } }}
         okText="Đóng"
+        width={640}
       >
         {resetResult && (
           <>
             <p>
               ✅ Reset thành công: <strong>{resetResult.reset}</strong> tài khoản{' '}
               {resetResult.noAccount > 0 && <>| ⚠️ Không có tài khoản: <strong>{resetResult.noAccount}</strong></>}
+              {resetResult.skippedAD > 0 && <>| 🔒 Tài khoản AD (bỏ qua, mật khẩu nội bộ không áp dụng): <strong>{resetResult.skippedAD}</strong></>}
             </p>
-            <p style={{ color: '#888', fontSize: 12 }}>Mật khẩu mới = Abcd@1234 (mặc định) — cán bộ sẽ phải đổi mật khẩu sau lần đăng nhập tiếp theo</p>
+            <p style={{ color: '#888', fontSize: 12 }}>
+              {resetResult.forceChangeOnLogin
+                ? 'Cán bộ có thể đăng nhập ngay bằng mật khẩu mới bên dưới — hệ thống sẽ bắt đổi mật khẩu ngay sau khi đăng nhập thành công.'
+                : 'Cán bộ có thể đăng nhập ngay bằng mật khẩu mới bên dưới và dùng bình thường, không bị bắt đổi mật khẩu.'}
+            </p>
             <Table
               size="small"
               rowKey="cbCode"
@@ -504,10 +588,18 @@ export default function CanBoPage() {
                 { title: 'Họ tên', dataIndex: 'fullName' },
                 { title: 'Mã CB', dataIndex: 'cbCode' },
                 {
+                  title: 'Mật khẩu mới', dataIndex: 'newPassword', width: 150,
+                  render: (mk?: string) => mk
+                    ? <Typography.Text code copyable={{ text: mk }}>{mk}</Typography.Text>
+                    : '—',
+                },
+                {
                   title: 'Kết quả', dataIndex: 'ok', width: 120,
-                  render: (ok: boolean) => ok
-                    ? <Tag color="green">Đã reset</Tag>
-                    : <Tag color="orange">Chưa có TK</Tag>,
+                  render: (ok: boolean, r) => r.skippedAD
+                    ? <Tag color="blue">Tài khoản AD</Tag>
+                    : ok
+                      ? <Tag color="green">Đã reset</Tag>
+                      : <Tag color="orange">Chưa có TK</Tag>,
                 },
               ]}
               pagination={false}
