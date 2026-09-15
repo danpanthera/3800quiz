@@ -2,7 +2,7 @@
 
 Tài liệu này dẫn **từng bước một, theo đúng thứ tự**, để đưa 3800Quiz từ máy dev lên một máy chủ **Windows** thật, cài đặt **trực tiếp trên chính máy chủ đó** bằng cách kết nối Internet **tạm thời** trong buổi cài đặt, sau đó ngắt hẳn để vận hành hoàn toàn trong **mạng nội bộ ngân hàng**, phục vụ toàn bộ 7 chi nhánh. Làm tuần tự từ Giai đoạn 0, đánh dấu ô checklist khi xong mỗi bước.
 
-> **Phạm vi**: PROD 3800quiz hiện dùng **Windows 11 Pro** (Hyper-V dạng Windows Optional Feature — xem 0.2). Tài liệu vẫn dùng được nguyên vẹn trên **Windows Server 2016 trở lên** nếu triển khai ở máy chủ khác dùng Server (`prod-setup-vm.ps1` tự nhận diện đúng loại Windows và bật Hyper-V tương ứng). **Windows Home không hỗ trợ Hyper-V, không dùng được.** Máy chủ chỉ có Internet **đúng trong buổi cài đặt ban đầu** (Giai đoạn 2) và mỗi lần cập nhật phiên bản sau này (Phụ lục A) — ngoài hai thời điểm đó, **không có Internet**. Không cần máy chuẩn bị riêng — mọi thứ dựng thẳng trên máy chủ.
+> **Phạm vi**: PROD 3800quiz dùng **Windows 11 Pro** (cài mới, 1 card LAN duy nhất, không có Apache/webserver khác). Máy chủ chỉ có Internet **đúng trong buổi cài đặt ban đầu** (Giai đoạn 2) và mỗi lần cập nhật phiên bản sau này (Phụ lục A) — ngoài hai thời điểm đó, **không có Internet**. Không cần máy chuẩn bị riêng — mọi thứ dựng thẳng trên máy chủ.
 
 ---
 
@@ -35,19 +35,19 @@ Tài liệu này dẫn **từng bước một, theo đúng thứ tự**, để �
 
 ### 0.2. Vì sao Hyper-V + máy ảo Ubuntu, không phải Docker Desktop hay "Docker cho Windows"
 
-Đã chốt dùng: **Hyper-V (tính năng có sẵn trên Windows) chạy một máy ảo Ubuntu, Docker Engine (container Linux) cài trong máy ảo đó.** PROD 3800quiz là **Windows 11 Pro** nên dùng Hyper-V dạng Windows Optional Feature (khác Windows Server dùng dạng "Server Role", nhưng cùng một hypervisor, script tự nhận diện — xem Giai đoạn 1). Hai lý do loại các phương án khác:
+Đã chốt dùng: **Hyper-V (tính năng Windows Optional Feature có sẵn trên Windows 11 Pro) chạy một máy ảo Ubuntu, Docker Engine (container Linux) cài trong máy ảo đó.** Hai lý do loại các phương án khác:
 
 - **"Docker cho Windows" kiểu container Windows (native)**: Postgres **không có** bản image Windows container chính thức. Muốn chạy kiểu này phải viết lại toàn bộ Dockerfile bằng base Windows và bỏ hẳn Postgres container — phá vỡ toàn bộ cách đóng gói hiện tại.
 - **Docker Desktop cài thẳng lên Windows (dùng WSL2)**: cần **giấy phép trả phí** với tổ chức lớn như ngân hàng, và mặc định không tự khởi động lại sau khi máy chủ reboot cho tới khi có người đăng nhập — rủi ro thật nếu máy tự khởi động lại lúc nửa đêm (đúng kịch bản hay gặp khi Windows Update tự reboot).
 
-Hyper-V là hypervisor gốc (không phải ảo hoá lồng nhau), có mặt trên cả Windows Server (từ 2012) lẫn Windows 10/11 Pro/Enterprise/Education (từ Windows 8) — Windows Home không có. Miễn phí hoàn toàn, và Docker trong Ubuntu tự khởi động cùng máy nhờ `systemd`, không cần ai đăng nhập — dịch vụ quản lý Hyper-V (`vmms`) chạy nền dạng SYSTEM service giống hệt nhau trên cả hai loại Windows.
+Hyper-V là hypervisor gốc (không phải ảo hoá lồng nhau), miễn phí hoàn toàn trên Windows 11 Pro, và Docker trong Ubuntu tự khởi động cùng máy nhờ `systemd`, không cần ai đăng nhập — dịch vụ quản lý Hyper-V (`vmms`) chạy nền dạng SYSTEM service.
 
 ### 0.3. Vì sao cài trực tiếp trên PROD bằng cách nối Internet tạm thời
 
-Cách làm: **cắm Internet tạm thời thẳng vào máy chủ PROD** trong buổi cài đặt (rút dây mạng nội bộ, cắm dây Internet vào đúng card mạng đó — hoặc dùng card mạng thứ 2 nếu máy chủ có sẵn; khi đó card thứ 2 trở thành card riêng của máy ảo, cần thêm 1 cổng switch mạng nội bộ cho nó ở Giai đoạn 3.1), dựng máy ảo + cài Docker + build ứng dụng **ngay trên máy chủ thật**, xong thì **ngắt Internet, cắm lại mạng nội bộ**. Không cần máy trung gian nào khác.
+Cách làm: **cắm Internet tạm thời thẳng vào máy chủ PROD** trong buổi cài đặt (rút dây mạng nội bộ khỏi card LAN duy nhất của máy, cắm dây Internet vào đúng card đó), dựng máy ảo + cài Docker + build ứng dụng **ngay trên máy chủ thật**, xong thì **ngắt Internet, cắm lại mạng nội bộ**. Không cần máy trung gian nào khác.
 
 So với cách dùng một máy chuẩn bị riêng rồi mang file qua USB, cách này:
-- Không phải lo tương thích "VM Configuration Version" giữa 2 máy Hyper-V khác nhau (máy ảo dựng thẳng trên Server thật thì chạy thẳng trên máy đó, không có bước export/import xuyên máy).
+- Không phải lo tương thích "VM Configuration Version" giữa 2 máy Hyper-V khác nhau (máy ảo dựng thẳng trên máy chủ thật thì chạy thẳng trên máy đó, không có bước export/import xuyên máy).
 - Không cần chuẩn bị/quét virus USB, không cần `docker save`/`docker load` ảnh cồng kềnh.
 - Đơn giản hơn cho lần đầu **và** cho mỗi lần cập nhật phiên bản sau này (Phụ lục A) — luôn lặp lại đúng một thao tác quen thuộc: nối mạng tạm → làm việc → ngắt mạng.
 
@@ -55,7 +55,6 @@ So với cách dùng một máy chuẩn bị riêng rồi mang file qua USB, cá
 
 Đánh đổi cần biết: máy chủ **có tiếp xúc trực tiếp với Internet** trong khoảng thời gian ngắn đó (thường 1 buổi). Để an toàn:
 - **Giữ Windows Firewall bật** (mặc định đã chặn toàn bộ kết nối đến từ ngoài) — không tắt vì "cho nhanh".
-- Nếu máy chủ có **2 card mạng vật lý**: dùng card thứ 2 riêng cho Internet tạm thời, không đụng tới card đang nối mạng nội bộ — tránh hẳn việc phải rút/cắm dây.
 - Làm xong việc gì cần Internet thì **ngắt ngay**, không để treo qua đêm.
 - Không cài thêm phần mềm/duyệt web ngoài phạm vi công việc trong lúc máy đang nối Internet.
 
@@ -76,12 +75,11 @@ Checklist bổ sung cần làm khi go-live:
 
 ### 0.5. Checklist chuẩn bị trước khi bắt tay vào làm
 
-- [ ] Máy chủ Windows 11 Pro (hoặc Windows Server 2016 trở lên nếu dùng máy chủ khác): tối thiểu **4 vCPU / 8GB RAM / 80GB ổ đĩa (ưu tiên SSD)** dành riêng cho máy ảo, cộng thêm phần cho bản thân Windows — tổng máy chủ nên có **6–8 vCPU / 16GB RAM** (mức này đã tính dư cho ~200 người dùng, kể cả kịch bản toàn bộ cùng vào thi một lúc)
+- [ ] Máy chủ Windows 11 Pro: tối thiểu **4 vCPU / 8GB RAM / 80GB ổ đĩa (ưu tiên SSD)** dành riêng cho máy ảo, cộng thêm phần cho bản thân Windows — tổng máy chủ nên có **6–8 vCPU / 16GB RAM** (mức này đã tính dư cho ~200 người dùng, kể cả kịch bản toàn bộ cùng vào thi một lúc)
 - [ ] Ổ `D:` còn ít nhất **80GB trống** — toàn bộ tài liệu này dùng `D:\quiz\` làm thư mục gốc phía Windows (mã nguồn, ISO, máy ảo). Nếu máy chủ chỉ có ổ `C:` hoặc muốn dùng đường dẫn khác, đổi qua tham số `-VmPath` khi chạy `prod-setup-vm.ps1` (Giai đoạn 2.2) và thay `D:\quiz\` bằng đường dẫn đó ở mọi bước còn lại
 - [ ] Một nguồn Internet tạm thời có thể cắm được vào máy chủ (dây mạng công ty nối tạm ra ngoài, router/modem/hotspot có cổng Ethernet) — đã xác nhận với bộ phận an ninh thông tin về việc tạm thời kết nối máy chủ này ra Internet
-- [ ] Biết máy chủ có mấy card mạng vật lý — nếu có từ 2 trở lên, dùng riêng 1 card cho Internet tạm thời để khỏi phải rút/cắm dây mạng nội bộ
 - [ ] Dải IP tĩnh nội bộ dành cho máy ảo (hỏi bộ phận mạng), và biết được máy chủ nằm ở subnet/VLAN nào
-- [ ] Quyền tạo bản ghi DNS `quiz.vbaquangbinh.com` trên DC ghi được (không phải RODC) — xem Giai đoạn 3.6
+- [ ] Quyền tạo bản ghi DNS `quiz.vbaquangbinh.com` trên DC ghi được (không phải RODC) — xem Giai đoạn 3.5
 - [ ] Danh sách máy client (đặc biệt máy trong domain AD, nếu có) để biết cách cài chứng chỉ gốc nội bộ hàng loạt qua GPO (Giai đoạn 5)
 - [ ] Địa chỉ repo mã nguồn (Git) của 3800quiz — nếu repo **private trên GitHub**, chuẩn bị sẵn **Personal Access Token** (xem cảnh báo ở Giai đoạn 2.3) vì GitHub không cho đăng nhập bằng mật khẩu tài khoản qua Git nữa
 
@@ -113,7 +111,7 @@ Mỗi lần **cập nhật phiên bản mới** sau này lặp lại đúng ki�
 Get-ComputerInfo | Select-Object OsName, OsVersion, OsHardwareAbstractionLayer
 ```
 
-PROD 3800quiz đang dùng **Windows 11 Pro** — `OsName` phải hiện đúng "Microsoft Windows 11 Pro" (không phải "...Home", bản Home không có Hyper-V nên không dùng được). Nếu triển khai trên máy chủ khác dùng Windows Server 2016 trở lên thì mọi bước còn lại của tài liệu vẫn áp dụng nguyên vẹn — `prod-setup-vm.ps1` tự nhận diện đúng loại Windows và bật Hyper-V tương ứng (Giai đoạn 2.2).
+PROD 3800quiz đang dùng **Windows 11 Pro** — `OsName` phải hiện đúng "Microsoft Windows 11 Pro".
 
 ### 1.2. Đồng bộ đồng hồ hệ thống
 
@@ -169,7 +167,7 @@ Sau khi xong Giai đoạn 2 (đã ngắt Internet), **chưa phải xong toàn b�
 
 ### 2.1. Kết nối Internet tạm thời
 
-Rút dây mạng nội bộ khỏi card mạng sẽ dùng, cắm dây Internet vào (hoặc dùng card mạng thứ 2 nếu có — xem 0.3). Xác nhận có mạng và ghi lại tên card mạng đó:
+Rút dây mạng nội bộ khỏi card LAN, cắm dây Internet vào đúng card đó. Xác nhận có mạng và ghi lại tên card mạng đó:
 ```powershell
 Get-NetAdapter
 Test-NetConnection 8.8.8.8
@@ -252,6 +250,36 @@ sudo docker compose -f /opt/3800quiz/docker-compose.prod.yml --env-file /opt/380
 Get-VM quiz3800-host | Select-Object AutomaticStartAction
 ```
 
+### 2.5. (Khuyến nghị) Chuyển dữ liệu Docker sang ổ đĩa SCSI riêng
+
+Máy ảo Generation 1 (đã dùng ở bước 2.2) chỉ **boot** được qua **IDE controller** — ổ hệ điều hành của Ubuntu đang nằm trên đúng ổ IDE đó, kéo theo cả dữ liệu Postgres (điểm thi, tài khoản...) vì Docker mặc định lưu mọi thứ vào `/var/lib/docker` trên ổ hệ thống. Microsoft khuyến cáo IDE chỉ nên dùng cho ổ hệ điều hành, không dùng cho dữ liệu — ít kênh song song hơn hẳn SCSI, ảnh hưởng hiệu năng ghi/đọc khi nhiều người cùng nộp bài một lúc (kịch bản ~200 người thi đồng thời đã tính ở mục 0.1).
+
+> **Nên làm ngay ở bước này, trước khi có dữ liệu thi thật**: lúc này Postgres mới chỉ có dữ liệu seed (7 chi nhánh, tài khoản mẫu) nên việc sao chép gần như tức thời. Để càng lâu, càng nhiều dữ liệu thật cần sao chép, thời gian Docker tạm dừng (vài phút) ở Bước 2 dưới đây sẽ càng dài. Bước này **không bắt buộc** để hệ thống chạy được — bỏ qua vẫn hoạt động bình thường, chỉ là dữ liệu nằm chung ổ IDE với hệ điều hành.
+
+**Bước 1 — Gắn ổ đĩa mới qua SCSI** (bên Windows, PowerShell quyền Administrator — làm được ngay cả khi máy ảo đang chạy, SCSI hỗ trợ gắn nóng, không cần tắt máy):
+```powershell
+New-VHD -Path "D:\quiz\quiz3800-host\pgdata-scsi.vhdx" -SizeBytes 50GB -Fixed
+Add-VMHardDiskDrive -VMName quiz3800-host -ControllerType SCSI -Path "D:\quiz\quiz3800-host\pgdata-scsi.vhdx"
+```
+Đổi `50GB` nếu muốn dự trù khác — kiểm tra dung lượng Docker đang dùng trước bằng lệnh `du -sh /var/lib/docker` ở Bước 2.
+
+**Bước 2 — Trong Ubuntu, xác định đúng tên ổ mới rồi chạy script** (`scripts/migrate-docker-dataroot.sh` đã có sẵn trong mã nguồn, xem Phụ lục C):
+```bash
+lsblk                          # tìm ổ mới vừa gắn (thường là /dev/sdb) — TUYỆT ĐỐI không đoán
+du -sh /var/lib/docker         # xem trước dung lượng cần chuyển
+cd /opt/3800quiz
+sudo bash scripts/migrate-docker-dataroot.sh /dev/sdb   # đổi /dev/sdb nếu lsblk cho tên khác
+```
+Script tự kiểm tra an toàn (dừng lại nếu lỡ trỏ nhầm vào ổ đang có phân vùng — tránh format nhầm ổ hệ điều hành), tạm dừng Docker vài phút để sao chép, đổi hướng Docker sang ổ mới rồi khởi động lại. Dữ liệu cũ được **đổi tên, không xoá** — script tự in hướng dẫn khôi phục ngay ở cuối nếu có sự cố.
+
+**Bước 3 — Kiểm tra**:
+```bash
+docker info --format 'DockerRootDir hiện tại: {{.DockerRootDir}}'   # phải trỏ vào /mnt/docker-data/docker
+curl -s http://127.0.0.1:8080/api/health
+docker compose -f /opt/3800quiz/docker-compose.prod.yml --env-file /opt/3800quiz/.env.prod ps   # cả 4 container Up (healthy)
+```
+Ổn định vài ngày thì xoá bản dự phòng cũ để lấy lại dung lượng ổ hệ điều hành (lệnh xoá script đã in sẵn lúc chạy xong Bước 2).
+
 ### ✅ Checklist Giai đoạn 2
 - [ ] Đã cắm Internet tạm thời, xác nhận có mạng
 - [ ] `prod-setup-vm.ps1` chạy xong không lỗi, máy ảo đã tạo và đang chạy
@@ -260,6 +288,7 @@ Get-VM quiz3800-host | Select-Object AutomaticStartAction
 - [ ] Đã lưu `JWT_SECRET`/`POSTGRES_PASSWORD` vào kho mật khẩu ngân hàng
 - [ ] `curl http://127.0.0.1:8080/api/health` trả `status: ok`, cả 4 container `Up (healthy)`
 - [ ] Automatic Start Action = Start
+- [ ] (Tuỳ chọn, khuyến nghị) Đã chuyển dữ liệu Docker sang ổ SCSI riêng (mục 2.5)
 
 ---
 
@@ -269,15 +298,9 @@ Get-VM quiz3800-host | Select-Object AutomaticStartAction
 
 **Trước khi rút dây Internet**: máy ảo cần có sẵn `scripts/prod-set-static-ip.sh` cho bước 3.2 — nếu mã nguồn được clone từ trước khi có script này, chạy `cd /opt/3800quiz && git pull` ngay lúc còn Internet. Rút dây rồi thì máy ảo không lấy thêm được gì từ GitHub.
 
-Switch `LAN-Tam` gắn cố định vào card mạng đã chỉ định ở Giai đoạn 2.1 (`-NetAdapterName`) — Hyper-V không quan tâm đầu kia dây cắm gì, nên chỉ cần đổi lại dây ở đúng card đó, không đụng gì thêm bên Hyper-V. Việc cần làm tuỳ máy chủ dùng mấy card mạng:
+Switch `LAN-Tam` gắn cố định vào card LAN duy nhất đã chỉ định ở Giai đoạn 2.1 (`-NetAdapterName`) — Hyper-V không quan tâm đầu kia dây cắm gì, nên chỉ cần rút dây Internet, cắm lại dây mạng nội bộ vào đúng card đó. Không cần sửa gì thêm bên Hyper-V.
 
-- **1 card** (đã rút dây nội bộ ra để cắm Internet ở 2.1): rút dây Internet, cắm lại dây mạng nội bộ vào đúng card đó. Không cần sửa gì bên Hyper-V.
-- **2 card riêng** (card thứ 2 dành cho Internet tạm, xem 0.3): rút dây Internet khỏi card thứ 2, cắm dây mạng nội bộ khác vào (thêm 1 cổng switch LAN, cùng VLAN với card chính) — từ nay card này luôn dành riêng cho máy ảo, không đụng tới nữa trừ lúc cập nhật (Phụ lục A). Windows cũng tự có 1 card ảo "Lan-Tam" trên switch này (`Get-NetIPAddress` sẽ thấy) — **đó là của Windows, không phải của máy ảo**, không đặt IP máy ảo lên đó. Gỡ hẳn để khỏi nhầm lẫn:
-  ```powershell
-  Set-VMSwitch -Name "LAN-Tam" -AllowManagementOS $false
-  Get-NetAdapter | Format-Table Name, Status    # card dành cho máy ảo phải là Up
-  ```
-  ⚠️ Chỉ chạy lệnh trên với máy chủ **2 card** — máy chủ 1 card thì IP của chính Windows nằm trên card ảo đó, gỡ đi là Windows mất mạng.
+> IP của chính Windows (dùng để RDP quản trị) nằm trên card ảo `vEthernet (LAN-Tam)` — đây là IP đã có sẵn từ trước khi tạo switch, độc lập hoàn toàn với IP `10.73.0.21` của máy ảo (đặt ở bước 3.2 bên dưới), không đụng vào nhau.
 
 Đổi tên switch cho gọn (tuỳ chọn, không bắt buộc):
 
@@ -296,14 +319,14 @@ cd /opt/3800quiz
 sudo bash scripts/prod-set-static-ip.sh <IP/CIDR> <gateway> <dns>
 ```
 
-Giá trị thật dùng cho máy chủ này — máy ảo đặt IP `10.73.0.22` trên **card mạng thứ 2** của máy chủ vật lý (không phải card LAN chính của máy thật, subnet mask `255.255.255.0` = `/24`, gateway `10.73.0.1`), DNS nội bộ *(Sếp bổ sung IP máy chủ RODC của chi nhánh — nối bằng dấu phẩy nếu có DNS phụ, **không dấu cách**)*:
+Giá trị thật dùng cho máy chủ này — 1 card LAN duy nhất (dùng chung cho cả DHCP tạm ở 2.1 lẫn IP tĩnh ở đây), máy ảo đặt IP `10.73.0.21` (subnet mask `255.255.255.0` = `/24`, gateway `10.73.0.1` — 3 giá trị này đã đặt sẵn làm mặc định trong script), DNS nội bộ `10.73.0.11` (RODC tại chính chi nhánh 3800 — chỉ dùng 1 DNS, không cần DNS phụ):
 ```bash
-sudo bash scripts/prod-set-static-ip.sh 10.73.0.22/24 10.73.0.1 <dns>
+sudo bash scripts/prod-set-static-ip.sh 10.73.0.21/24 10.73.0.1 10.73.0.11
 ```
 
 Script mặc định dùng card `eth0` — nếu `ip addr` cho thấy tên khác thì thêm tham số thứ 4. Chạy xong script tự kiểm tra (IP, bảng định tuyến, ping gateway) và **ghi nhớ** cấu hình này — lần sau chỉ cần chạy `sudo bash scripts/prod-set-static-ip.sh` (không tham số) là quay lại đúng IP tĩnh này, dùng ở Phụ lục A khi cập nhật. Chạy lại (VD gõ nhầm) vẫn an toàn, file cũ tự được sao lưu kèm thời gian trước khi ghi đè.
 
-Ghi lại IP này (`10.73.0.22`) — dùng để đăng ký DNS ở bước 3.6.
+Ghi lại IP này (`10.73.0.21`) — dùng để đăng ký DNS ở bước 3.5.
 
 ### 3.3. Mở tường lửa trong Ubuntu
 
@@ -318,22 +341,49 @@ Nếu các chi nhánh khác nằm ở VLAN/subnet riêng, nhờ bộ phận qu�
 
 > **Lưu ý**: vì máy ảo có IP riêng trên switch External, **Windows Firewall của máy chủ không liên quan** tới traffic người dùng vào ứng dụng (traffic đi thẳng tới máy ảo, không qua ngăn xếp mạng của Windows). Windows Firewall chỉ cần mở nếu quản trị viên cần RDP vào chính Windows để quản trị Hyper-V.
 
-### 3.5. Nếu máy chủ đã có sẵn Apache (hoặc webserver khác) chạy trên Windows
+> ⚠️ **Chính sách switch mạng**: nếu ngân hàng bật port security/802.1X (giới hạn 1 MAC/IP mỗi cổng switch vật lý), việc Windows và máy ảo cùng có IP riêng trên chung 1 cổng NIC vật lý (kiến trúc External switch ở trên) có thể bị switch chặn — báo trước cho bộ phận mạng ngay lúc xác nhận ở mục này.
 
-> Đúng trường hợp của máy chủ PROD 3800quiz — máy chủ này **đã có sẵn Apache** chạy trên Windows (khác 7800quiz, máy chủ đó không có Apache).
-
-Cài chung được, **không xung đột port 80/443** — đúng nhờ kiến trúc External switch ở trên: Apache bind vào IP của chính Windows, còn Caddy trong máy ảo bind vào IP riêng của máy ảo (bước 3.2), hai địa chỉ IP khác nhau nên hai bên không hề "giành" cổng của nhau dù cùng chạy trên một máy chủ vật lý. (Điều này chỉ đúng khi làm theo đúng Giai đoạn 3 — nếu port-forward 80/443 từ Windows vào máy ảo thay vì dùng External switch, lúc đó Windows mới thực sự phải bind 2 cổng đó và sẽ xung đột thật với Apache.)
-
-Vẫn cần lưu ý 3 điểm sau khi triển khai chung:
-- **IP/tên riêng**: `SITE_ADDRESS` phải là IP tĩnh/tên nội bộ **khác** với IP/tên đang gán cho site Apache hiện tại.
-- **Chính sách switch mạng**: nếu ngân hàng bật port security/802.1X (giới hạn 1 MAC/IP mỗi cổng switch vật lý), việc thêm IP của máy ảo trên cùng cổng NIC vật lý với Windows có thể bị switch chặn — báo trước cho bộ phận mạng ở bước 3.4.
-- **Tài nguyên máy chủ**: cấu hình dành cho 3800quiz + máy ảo là **cộng thêm** vào phần Apache/site khác đang chiếm trên cùng máy chủ, không phải dùng chung.
-
-### 3.6. Đăng ký tên DNS nội bộ `quiz.vbaquangbinh.com` qua RODC
+### 3.5. Đăng ký tên DNS nội bộ `quiz.vbaquangbinh.com` qua RODC
 
 Dùng tên nội bộ thay vì gõ thẳng IP — người dùng dễ nhớ, và IP máy ảo có đổi sau này cũng chỉ cần sửa 1 bản ghi DNS thay vì báo lại toàn bộ chi nhánh. Máy chủ đang dùng **RODC** (Read-Only Domain Controller) làm DNS, nên cần đúng thứ tự sau — **không tạo được bản ghi trực tiếp trên RODC**, RODC chỉ giữ **bản sao chỉ-đọc** của zone.
 
-1. Trên **một Domain Controller ghi được** (writable DC, không phải RODC): mở **DNS Manager** → Forward Lookup Zones → zone `vbaquangbinh.com` → chuột phải → **New Host (A or AAAA)...** → Name: `quiz` → IP address: đúng IP tĩnh của máy ảo đã đặt ở bước 3.2 (`10.73.0.22`) → Add Host.
+> ⚠️ **Việc ở mục này diễn ra trên hạ tầng Active Directory của ngân hàng (Domain Controller), không phải trên máy chủ PROD 3800quiz** — cần phối hợp với bộ phận AD/hạ tầng, vì tạo/sửa phạm vi replicate của một zone DNS ảnh hưởng toàn domain, không chỉ riêng 3800quiz.
+
+#### Bước 0 — Nếu RODC tại chi nhánh 3800 chưa thấy zone `vbaquangbinh.com`
+
+Zone AD-integrated **không tạo thủ công trên từng DC/RODC** — nó tự động replicate tới mọi DNS server nằm trong phạm vi (*replication scope*) đã cấu hình. RODC "chưa có zone" thường do 1 trong 3 nguyên nhân sau, kiểm tra lần lượt:
+
+1. **Zone đã tồn tại ở DC khác trong domain chưa** (chạy trên bất kỳ DC ghi được nào, hoặc máy đã cài RSAT):
+   ```powershell
+   Get-DnsServerZone | Where-Object { $_.ZoneName -eq 'vbaquangbinh.com' }
+   ```
+   - **Có kết quả** → zone đã tồn tại, chỉ là RODC tại chi nhánh 3800 chưa có bản sao. Đi tiếp bước 2 và 3 bên dưới. **Không tạo zone mới** — tạo trùng tên sẽ xung đột với zone đã có.
+   - **Không có kết quả ở bất kỳ DC nào** → zone thật sự chưa tồn tại trong toàn forest, tạo mới **trên một Domain Controller ghi được** (không phải RODC):
+     ```powershell
+     Add-DnsServerPrimaryZone -Name "vbaquangbinh.com" -ReplicationScope "Domain" -DynamicUpdate Secure
+     ```
+     (`-ReplicationScope Domain` = tự replicate tới mọi DNS server đang chạy trong domain, bao gồm RODC — tương đương chọn **Primary zone → Store in Active Directory → "To all DNS servers running on domain controllers in this domain"** nếu làm qua giao diện **DNS Manager → New Zone Wizard**.) Xong bước này thì zone đã tồn tại giống như trường hợp "Có kết quả" ở trên — đi tiếp bước 2.
+
+2. **Kiểm tra phạm vi replicate của zone có bao gồm RODC không** (chạy trên DC đang giữ zone ghi được):
+   ```powershell
+   Get-DnsServerZone -Name vbaquangbinh.com | Select-Object ZoneName, ReplicationScope
+   ```
+   Nếu không phải `Domain` (hoặc `Forest`), nhờ bộ phận AD mở rộng phạm vi:
+   ```powershell
+   Set-DnsServerPrimaryZone -Name vbaquangbinh.com -ReplicationScope Domain
+   ```
+
+3. **Xác nhận RODC tại chi nhánh 3800 có đang chạy vai trò DNS Server không** (chạy trực tiếp trên RODC đó):
+   ```powershell
+   Get-WindowsFeature DNS
+   ```
+   Nếu `Installed` là `False`, nhờ bộ phận AD cài vai trò DNS trên RODC đó — RODC sau đó sẽ tự nạp mọi zone AD-integrated nằm trong phạm vi replicate ở bước 2 mà không cần thao tác thủ công gì thêm.
+
+Sau khi đã chắc chắn zone tồn tại và RODC nằm trong phạm vi replicate, tiếp tục bước 1 bên dưới như bình thường.
+
+#### Tạo bản ghi `quiz`
+
+1. Trên **một Domain Controller ghi được** (writable DC, không phải RODC): mở **DNS Manager** → Forward Lookup Zones → zone `vbaquangbinh.com` → chuột phải → **New Host (A or AAAA)...** → Name: `quiz` → IP address: đúng IP tĩnh của máy ảo đã đặt ở bước 3.2 (`10.73.0.21`) → Add Host.
 2. Chờ bản ghi replicate về RODC theo lịch AD replication bình thường, hoặc ép ngay cho gấp:
    ```powershell
    repadmin /syncall /AdeP
@@ -341,7 +391,7 @@ Dùng tên nội bộ thay vì gõ thẳng IP — người dùng dễ nhớ, và
 3. Kiểm tra từ một máy client đang dùng RODC đó làm DNS server (thường là máy trong cùng chi nhánh với RODC):
    ```powershell
    nslookup quiz.vbaquangbinh.com
-   # Kỳ vọng: trả đúng IP tĩnh của máy ảo, 10.73.0.22
+   # Kỳ vọng: trả đúng IP tĩnh của máy ảo, 10.73.0.21
    ```
 
 > **Lưu ý**: nếu `vbaquangbinh.com` cũng là domain public thật (website/email ra Internet), bản ghi `quiz` này **chỉ tồn tại trong DNS nội bộ** của ngân hàng — không đăng ký ra ngoài, không ảnh hưởng gì tới domain public. Bên ngoài mạng nội bộ (kể cả dùng đúng URL) sẽ không phân giải được, đây là hành vi đúng của DNS nội bộ (split-horizon), không phải lỗi.
@@ -353,7 +403,6 @@ Từ bước này về sau, mọi chỗ trong tài liệu dùng `quiz.vbaquangbi
 - [ ] Máy ảo có IP tĩnh đúng dải mạng ngân hàng
 - [ ] `ufw allow 80,443/tcp` đã chạy (nếu ufw đang bật)
 - [ ] Đã xác nhận với bộ phận mạng: các chi nhánh truy cập được cổng 80/443 tới IP máy ảo
-- [ ] Nếu máy chủ đã có Apache/webserver khác: đã đặt IP/tên riêng cho 3800quiz và đã báo bộ phận mạng về IP mới trên cùng cổng switch (mục 3.5)
 - [ ] Đã tạo bản ghi A `quiz.vbaquangbinh.com` trên DC ghi được, đã replicate về RODC, `nslookup` trả đúng IP máy ảo
 
 ---
@@ -616,7 +665,7 @@ Bản sao lưu chưa từng được phục hồi thử thì chưa phải là b�
 | Container `api` khởi động rồi tắt liên tục (`Restarting`), log báo `Thiếu JWT_SECRET hợp lệ` | `.env.prod` còn chữ mẫu `THAY_BANG_...`, để trống hoặc khoá quá ngắn | Chạy lại `prod-setup-app.sh` (xem ghi chú 🔁 ở Giai đoạn 2.3) — script tự sinh lại bí mật còn chữ mẫu và đồng bộ mật khẩu vào Postgres. API cố ý từ chối chạy với khoá không an toàn |
 | `prod-setup-app.sh` dừng ngay sau dòng "Đang tạo .env.prod...", trở về dấu nhắc lệnh mà không báo lỗi | Bản script cũ (trước 11/09/2026) bị lỗi SIGPIPE ở dòng sinh mật khẩu | `cd /opt/3800quiz && git pull` để lấy bản đã sửa, rồi chạy lại script — không cần xoá gì |
 | Máy ảo ping gateway báo `From 192.168.1.x ... Destination Host Unreachable`; `ip route` vẫn còn `default via 192.168.1.1 ... proto dhcp` | IP tĩnh chưa được áp dụng — máy ảo vẫn giữ IP DHCP của Internet tạm. Switch ảo không mất kết nối khi đổi dây ở máy chủ thật nên máy ảo không tự bỏ IP cũ | Chạy `prod-set-static-ip.sh` (Giai đoạn 3.2) — script tắt DHCP, xoá IP cũ còn bám, tự ping gateway để xác nhận |
-| Windows ping được IP máy ảo nhưng máy khác trong LAN thì không | IP đó bị đặt nhầm cho card `vEthernet (LAN-Tam)` của Windows — Windows đang tự trả lời chính nó (kiểm tra: `Get-NetIPAddress -AddressFamily IPv4`) | Gỡ IP khỏi Windows: máy chủ 2 card → `Set-VMSwitch -Name "LAN-Tam" -AllowManagementOS $false` (xem 3.1); máy chủ 1 card → chỉ gỡ đúng IP đó: `Remove-NetIPAddress -IPAddress <IP> -Confirm:$false`. IP máy ảo chỉ đặt bên trong Ubuntu (3.2) |
+| Windows ping được IP máy ảo nhưng máy khác trong LAN thì không | IP đó bị đặt nhầm cho card `vEthernet (LAN-Tam)` của Windows — Windows đang tự trả lời chính nó (kiểm tra: `Get-NetIPAddress -AddressFamily IPv4`) | Gỡ đúng IP đó khỏi Windows: `Remove-NetIPAddress -IPAddress <IP> -Confirm:$false`. IP máy ảo chỉ đặt bên trong Ubuntu (3.2) |
 | Trình duyệt báo "Not secure"/chứng chỉ không đáng tin | Máy đó chưa cài chứng chỉ gốc `3800quiz-root-ca.crt` | Xem Giai đoạn 5.2 — cài qua GPO (máy trong domain) hoặc cài tay |
 | Đấu trường không kết nối được, mọi thứ khác vẫn bình thường | Thiết bị bảo mật mạng nội bộ chặn nâng cấp WebSocket | Mở DevTools trên trình duyệt (F12) → tab Network → lọc "WS" → phải thấy trạng thái **101**. Nếu chi nhánh này không được mà chi nhánh khác được, báo bộ phận mạng kiểm tra thiết bị của riêng chi nhánh đó |
 | Import file báo lỗi **413** | File vượt quá 25MB | Chia nhỏ file trước khi import |
@@ -656,7 +705,7 @@ curl -s http://127.0.0.1:8080/api/health   # kiểm tra bỏ qua HTTPS/chứng c
 | `scripts/prod-setup-vm.ps1` | `D:\quiz\scripts\` (Windows) | Dựng máy ảo Ubuntu tự động (Giai đoạn 2.2) |
 | `scripts/prod-setup-app.sh` | Mã nguồn (trong VM) | Cài Docker + build + khởi tạo ứng dụng tự động (Giai đoạn 2.3) |
 | `scripts/prod-set-static-ip.sh` | Mã nguồn (trong VM) | Đặt IP tĩnh qua netplan tự động (Giai đoạn 3.2) |
-| `scripts/migrate-docker-dataroot.sh` | Mã nguồn (trong VM) | Chuyển dữ liệu Docker (Postgres...) sang ổ SCSI mới — chạy 1 lần khi ổ hệ điều hành đang gắn IDE |
+| `scripts/migrate-docker-dataroot.sh` | Mã nguồn (trong VM) | Chuyển dữ liệu Docker (Postgres...) sang ổ SCSI mới — chạy 1 lần, khuyến nghị ngay ở Giai đoạn 2.5 |
 | `docker-compose.prod.yml` | `/opt/3800quiz` (trong VM) | Cấu hình toàn bộ hệ thống production |
 | `Caddyfile` | `/opt/3800quiz` (trong VM) | Cấu hình reverse proxy + HTTPS nội bộ (`tls internal`) |
 | `.env.prod` | `/opt/3800quiz` (trong VM) | **Bí mật** — mật khẩu DB, khoá JWT (không commit, không chia sẻ qua kênh không an toàn) |

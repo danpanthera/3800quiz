@@ -6,18 +6,23 @@
 # YAML nhiều dòng nhiều ký tự đặc biệt (#, :, [, ], thụt lề) — rất dễ gõ sai
 # qua console đó (không dán clipboard được).
 #
+# Máy PROD 3800quiz chỉ có 1 card LAN duy nhất (eth0) — dùng chung cho cả 2
+# việc, không cần 2 card: cắm Internet tạm (DHCP) để git pull code mới, xong
+# quay lại IP tĩnh nội bộ để chạy production.
+#
 # 3 cách dùng (chạy bằng sudo):
 #   1) IP tĩnh mạng nội bộ (Giai đoạn 3.2) — script ghi nhớ cấu hình này:
 #        sudo bash prod-set-static-ip.sh <IP/CIDR> <gateway> <dns[,dns-phụ]> [card-mạng]
-#        VD: sudo bash prod-set-static-ip.sh 10.20.1.50/24 10.20.1.1 10.20.1.2,10.20.1.3
+#        VD (giá trị thật của máy này): sudo bash prod-set-static-ip.sh 10.73.0.21/24 10.73.0.1 <dns>
 #   2) Nhận IP tự động (DHCP) khi cắm Internet tạm để cập nhật (Phụ lục A):
 #        sudo bash prod-set-static-ip.sh dhcp
 #   3) Quay lại IP tĩnh đã ghi nhớ ở cách 1 (sau khi cắm lại mạng nội bộ):
 #        sudo bash prod-set-static-ip.sh
 #
-# Lấy đúng gateway/DNS THẬT (đừng đoán): trên Windows chạy `ipconfig /all`,
-# đọc "Default Gateway"/"DNS Servers" của card mạng nội bộ. Nhiều DNS nối bằng
-# dấu phẩy, KHÔNG dấu cách. card-mạng mặc định "eth0".
+# Lấy đúng DNS THẬT (đừng đoán): trên Windows chạy `ipconfig /all`, đọc "DNS
+# Servers" của card mạng nội bộ (gateway/IP/card-mạng của máy này đã đặt sẵn
+# làm mặc định trong script — xem DEFAULT_* bên dưới). Nhiều DNS nối bằng dấu
+# phẩy, KHÔNG dấu cách.
 #
 # Script ghi đúng 1 file /etc/netplan/99-prod-static.yaml, tắt mọi file netplan
 # khác (đổi tên thành .bak-<giờ>, không xoá — khôi phục được), tắt cloud-init tự
@@ -30,6 +35,14 @@ if [ "$(id -u)" != 0 ]; then
   exit 1
 fi
 
+# Cấu hình mạng cố định của máy PROD 3800quiz — chỉ có 1 card LAN duy nhất,
+# dùng DHCP tạm khi cần Internet (git pull code mới, Phụ lục A), quay lại
+# đúng IP tĩnh dưới đây khi chạy production trong mạng nội bộ ngân hàng
+# (xem DEPLOYMENT.md 3.2). Đổi 3 dòng này nếu IP/gateway của máy chủ đổi.
+DEFAULT_IFACE=eth0
+DEFAULT_ADDR=10.73.0.21/24
+DEFAULT_GATEWAY=10.73.0.1
+
 # Không có đuôi .yaml nên netplan bỏ qua file này.
 SAVED=/etc/netplan/prod-static.args
 saved_iface() { if [ -f "$SAVED" ]; then awk '{print $4}' "$SAVED"; fi; }
@@ -38,26 +51,27 @@ case "${1:-}" in
   dhcp)
     MODE=dhcp
     IFACE="${2:-$(saved_iface)}"
-    IFACE="${IFACE:-eth0}"
+    IFACE="${IFACE:-$DEFAULT_IFACE}"
     ;;
   '')
-    if [ ! -f "$SAVED" ]; then
-      echo 'Chưa có IP tĩnh nào được ghi nhớ — chạy đủ tham số lần đầu:' >&2
-      echo '  sudo bash prod-set-static-ip.sh <IP/CIDR> <gateway> <dns>' >&2
+    if [ -f "$SAVED" ]; then
+      MODE=static
+      read -r ADDR GATEWAY DNS IFACE < "$SAVED"
+    else
+      echo 'Chưa có IP tĩnh nào được ghi nhớ — chạy kèm DNS nội bộ (RODC) cho lần đầu:' >&2
+      echo "  sudo bash prod-set-static-ip.sh $DEFAULT_ADDR $DEFAULT_GATEWAY <dns>" >&2
       exit 1
     fi
-    MODE=static
-    read -r ADDR GATEWAY DNS IFACE < "$SAVED"
     ;;
   *)
     MODE=static
     ADDR="$1"
     GATEWAY="${2:?Thiếu gateway — lấy từ ipconfig /all trên Windows}"
     DNS="${3:?Thiếu DNS — lấy từ ipconfig /all trên Windows, nhiều DNS nối bằng dấu phẩy}"
-    IFACE="${4:-eth0}"
+    IFACE="${4:-$DEFAULT_IFACE}"
     case "$ADDR" in
       */*) ;;
-      *) echo "Thiếu tiền tố mạng (VD /24) trong '$ADDR' — sửa lại thành dạng 10.20.1.50/24" >&2; exit 1 ;;
+      *) echo "Thiếu tiền tố mạng (VD /24) trong '$ADDR' — sửa lại thành dạng 10.73.0.21/24" >&2; exit 1 ;;
     esac
     ;;
 esac

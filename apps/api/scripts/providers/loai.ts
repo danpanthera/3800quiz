@@ -1,7 +1,7 @@
 // Kiểu chung cho mọi adapter nhà cung cấp TTS — xem 4 file cùng thư mục.
 export interface TuyChonSinhAmThanh {
   voice: string;
-  /** Tốc độ đọc — chỉ macos dùng (say -r); các provider khác bỏ qua. */
+  /** Tốc độ đọc — macos dùng qua `say -r`, google dùng qua `speakingRate`; các provider còn lại bỏ qua. */
   rate?: number;
 }
 

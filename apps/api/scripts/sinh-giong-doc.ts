@@ -9,6 +9,12 @@
 //   npm run giong-doc -- --subject "CNTT"
 //   npm run giong-doc -- --prune
 //
+// Vá tốc độ cho ĐỀ BÀI đọc quá lâu (Đấu trường chỉ đọc đề trong --arena-limit
+// giây): sinh lại ĐÚNG các đề bài đang vượt giới hạn với tốc độ đọc nhanh hơn,
+// ghi đè đúng file/khoá cũ (không đổi giọng/khoá nên client không cần đổi gì).
+// KHÔNG đụng tới các mục khác (đáp án, nhãn, đề bài đã đủ ngắn):
+//   npm run giong-doc -- --provider google --voice vi-VN-Neural2-A --speed-up-over-limit 2
+//
 // Riêng ĐỀ BÀI/ĐÁP ÁN của mọi câu hỏi LUÔN trộn ~50% giọng Nam theo TỪNG CÂU
 // (xem giongCuaCauHoi() ở giong-doc-key.ts) — không có cờ --male-ratio/
 // --male-voice để tắt/đổi nữa: 3 hằng số đó PHẢI khớp TUYỆT ĐỐI với bản client
@@ -71,6 +77,8 @@ interface ThamSo {
   dryRun: boolean;
   force: boolean;
   concurrency: number;
+  /** Bội số tốc độ đọc — chỉ áp cho đề bài đang vượt --arena-limit giây (xem xuLySpeedUpOverLimit()). */
+  speedUpOverLimit?: number;
 }
 
 function parseArgs(argv: string[]): ThamSo {
@@ -100,6 +108,9 @@ function parseArgs(argv: string[]): ThamSo {
     dryRun: has('dry-run'),
     force: has('force'),
     concurrency: get('concurrency') ? Number(get('concurrency')) : 3,
+    speedUpOverLimit: get('speed-up-over-limit')
+      ? Number(get('speed-up-over-limit'))
+      : undefined,
   };
 }
 
@@ -327,6 +338,68 @@ async function main() {
   let daSinh = 0,
     daBoQua = 0;
   let ghiManifestTuLanCuoi = 0;
+
+  // ── Chế độ vá tốc độ: CHỈ sinh lại đề bài đang vượt --arena-limit giây,
+  // ghi đè đúng key/tên file cũ (giọng giữ nguyên) — không đụng gì khác. ──────
+  if (opts.speedUpOverLimit) {
+    const canVa = new Map<string, MucCanDoc>();
+    for (const q of cauHoiDaLoc) {
+      const noiDung = q.content.trim();
+      if (!noiDung) continue;
+      const giong = giongCuaCauHoi(noiDung);
+      const key = khoaGiongDocCauHoi(noiDung, giong);
+      const mCu = manifest[key];
+      if (mCu && mCu.dur > opts.arenaLimit && !canVa.has(key)) {
+        canVa.set(key, { key, text: noiDung, voice: giong });
+      }
+    }
+    console.log(
+      `\n⚡ Chế độ vá tốc độ: ${canVa.size} đề bài đang vượt ${opts.arenaLimit}s ` +
+        `— sinh lại với tốc độ đọc x${opts.speedUpOverLimit}...`,
+    );
+
+    let daVa = 0;
+    for (const muc of canVa.values()) {
+      const spellOut = !nhaCungCap.hoTroSsml;
+      const vanBanDaChuan = chuanHoaVanBanDeDoc(muc.text, { spellOut });
+      const fileDich = join(THU_MUC_AUDIO, `${muc.key}.mp3`);
+      try {
+        const doan = tachDoanQuaDai(vanBanDaChuan, nhaCungCap.gioiHanKyTu);
+        const fileThoTmp = doan.map((_, i) =>
+          join(THU_MUC_AUDIO, `.tmp-${muc.key}-${i}.raw`),
+        );
+        for (let i = 0; i < doan.length; i++) {
+          await nhaCungCap.sinh(doan[i], fileThoTmp[i], {
+            voice: muc.voice,
+            rate: opts.speedUpOverLimit,
+          });
+        }
+        const fileTmpDich = fileDich + '.tmp';
+        await nenVaGhi(fileThoTmp, fileTmpDich);
+        const thoiLuong = await docThoiLuong(fileTmpDich);
+        renameSync(fileTmpDich, fileDich);
+        for (const f of fileThoTmp) rmSync(f, { force: true });
+
+        manifest[muc.key] = {
+          preview: muc.text.slice(0, 60),
+          norm: vanBanDaChuan,
+          dur: Math.round(thoiLuong * 100) / 100,
+          bytes: statSync(fileDich).size,
+          provider: opts.provider,
+          voice: muc.voice,
+        };
+        daVa++;
+        console.log(
+          `  ✓ [${muc.key}] ${thoiLuong.toFixed(1)}s  "${muc.text.slice(0, 50)}..."`,
+        );
+      } catch (err) {
+        console.error(`LỖI khi vá "${muc.key}":`, (err as Error).message);
+      }
+    }
+    ghiManifest(manifest);
+    console.log(`\nĐã vá xong ${daVa}/${canVa.size} đề bài.`);
+    return;
+  }
 
   for (const muc of danhSach) {
     const spellOut = !nhaCungCap.hoTroSsml;

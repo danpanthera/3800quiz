@@ -16,7 +16,8 @@
 # tự tìm thấy và dùng luôn, không cần Internet cho bước này. Không có sẵn thì
 # script tự tải bản LTS mới nhất về (cần Internet).
 #
-# Chạy với quyền Administrator:
+# Chạy với quyền Administrator, PHẢI dùng card Ethernet CÓ DÂY (script tự chặn
+# nếu lỡ chọn card WiFi — xem bước 4 bên dưới):
 #   .\prod-setup-vm.ps1 -NetAdapterName "Ethernet"
 #
 # Nếu Hyper-V CHƯA được bật trước đó, máy cần khởi động lại — script sẽ báo
@@ -112,6 +113,13 @@ if (-not $sw) {
     if (-not $adapter) {
         $available = (Get-NetAdapter | Select-Object -ExpandProperty Name) -join "', '"
         throw "Không tìm thấy card mạng '$NetAdapterName' — kiểm tra lại đúng tên (phân biệt hoa/thường, giữ nguyên khoảng trắng nếu có). Card mạng hiện có trên máy: '$available'"
+    }
+    # Card WiFi (kể cả USB WiFi) không bridge ổn định cho Virtual Switch — chuẩn
+    # 802.11 không cho nhiều MAC dùng chung 1 phiên xác thực, gây lỗi mạng khó
+    # chẩn đoán về sau (đã gặp thật trên PROD: máy ảo bị NO-CARRIER, card quản
+    # trị ảo của Windows bị Disconnected dù card vật lý vẫn báo Up).
+    if ($adapter.PhysicalMediaType -eq 'Native 802.11' -or $adapter.InterfaceDescription -match 'Wireless|WiFi|WLAN|802\.11') {
+        throw "Card mạng '$NetAdapterName' ($($adapter.InterfaceDescription)) là card WiFi — KHÔNG dùng được cho Virtual Switch của máy ảo PROD. Chọn đúng card Ethernet CÓ DÂY. Chạy lệnh sau để xem card nào có dây thật (PhysicalMediaType = '802.3'): Get-NetAdapter | Format-Table Name, InterfaceDescription, Status, PhysicalMediaType"
     }
     Ghi "Đang tạo Virtual Switch '$SwitchName' gắn với card mạng '$NetAdapterName'..."
     New-VMSwitch -Name $SwitchName -NetAdapterName $NetAdapterName -AllowManagementOS $true | Out-Null

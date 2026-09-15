@@ -27,7 +27,13 @@ export const google: NhaCungCapTts = {
         body: JSON.stringify({
           input: { text },
           voice: { languageCode: 'vi-VN', name: tuyChon.voice },
-          audioConfig: { audioEncoding: 'MP3' },
+          // speakingRate: 1.0 là mặc định của Google — chỉ gửi khi có yêu cầu đổi
+          // tốc độ (VD --speed-up-over-limit) để không đổi hành vi của mọi lần
+          // sinh audio bình thường trước đó.
+          audioConfig: {
+            audioEncoding: 'MP3',
+            ...(tuyChon.rate ? { speakingRate: tuyChon.rate } : {}),
+          },
         }),
       },
     );

@@ -57,8 +57,8 @@ interface Props {
 // người làm bật công tắc "Tự động chuyển câu"; tắt công tắc thì phải tự bấm
 // "Tiếp tục" (nút này luôn có sẵn nên bật/tắt công tắc không đổi cách bấm tay).
 const AUTO_ADVANCE_DELAY_MS = 5_000
-const SOUND_STORAGE_KEY = '7800quiz.instant-player.sound'
-const AUTO_ADVANCE_STORAGE_KEY = '7800quiz.instant-player.auto-advance'
+const SOUND_STORAGE_KEY = '3800quiz.instant-player.sound'
+const AUTO_ADVANCE_STORAGE_KEY = '3800quiz.instant-player.auto-advance'
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60)

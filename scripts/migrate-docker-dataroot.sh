@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# 7800Quiz — Chuyển toàn bộ dữ liệu Docker (postgres_data, caddy_data, images...)
+# 3800Quiz — Chuyển toàn bộ dữ liệu Docker (postgres_data, caddy_data, images...)
 # sang ổ đĩa mới gắn qua SCSI controller của máy ảo.
 #
 # Lý do: ổ hệ điều hành hiện tại của máy ảo gắn qua IDE controller (Generation 1
@@ -9,8 +9,8 @@
 # (điểm thi, tài khoản...) hiện đang nằm trên đúng ổ IDE đó.
 #
 # CHUẨN BỊ TRƯỚC (bên Windows, PowerShell qua RDP — KHÔNG phải trong máy ảo):
-#   New-VHD -Path "D:\quiz\quiz7800-host\pgdata-scsi.vhdx" -SizeBytes 50GB -Fixed
-#   Add-VMHardDiskDrive -VMName quiz7800-host -ControllerType SCSI -Path "D:\quiz\quiz7800-host\pgdata-scsi.vhdx"
+#   New-VHD -Path "D:\quiz\quiz3800-host\pgdata-scsi.vhdx" -SizeBytes 50GB -Fixed
+#   Add-VMHardDiskDrive -VMName quiz3800-host -ControllerType SCSI -Path "D:\quiz\quiz3800-host\pgdata-scsi.vhdx"
 # (làm được ngay cả khi máy ảo đang chạy, không cần tắt máy — SCSI hỗ trợ gắn
 # nóng. Đổi dung lượng 50GB nếu cần, xem gợi ý đo dung lượng hiện tại bên dưới)
 #

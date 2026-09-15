@@ -11,9 +11,9 @@ import { urlGiongDoc, urlGiongDocCauHoi } from './giong-doc-key'
 export type PhamViGiongDoc = 'instant' | 'arena-host' | 'arena-spectator'
 
 const KHOA_LUU: Record<PhamViGiongDoc, string> = {
-  instant: '7800quiz.instant-player.giong-doc',
-  'arena-host': '7800quiz.arena-host.giong-doc',
-  'arena-spectator': '7800quiz.arena-spectator.giong-doc',
+  instant: '3800quiz.instant-player.giong-doc',
+  'arena-host': '3800quiz.arena-host.giong-doc',
+  'arena-spectator': '3800quiz.arena-spectator.giong-doc',
 }
 
 /** Mặc định TẮT ở mọi phạm vi — phải == 'on' mới coi là bật. */
@@ -185,7 +185,7 @@ let kenhPhatSong: BroadcastChannel | null = null
 function layKenhPhatSong(): BroadcastChannel | null {
   try {
     if (typeof BroadcastChannel === 'undefined') return null
-    if (!kenhPhatSong) kenhPhatSong = new BroadcastChannel('7800quiz-giong-doc')
+    if (!kenhPhatSong) kenhPhatSong = new BroadcastChannel('3800quiz-giong-doc')
     return kenhPhatSong
   } catch {
     return null
