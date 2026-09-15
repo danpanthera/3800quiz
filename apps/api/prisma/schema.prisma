@@ -350,7 +350,7 @@ model AuditLog {
   @@map("audit_logs")
 }
 
-// ─── Sprint 1: Lớp học & Đợt thi ──────────────────────────────────────────
+// ─── Phần 1: Lớp học & Đợt thi ────────────────────────────────────────────
 
 model AcademicYear {
   id        String   @id @default(uuid())
@@ -444,7 +444,7 @@ enum ExamSessionStatus {
   @@map("exam_session_status")
 }
 
-// ─── Sprint 8: Chế độ Đấu trường ──────────────────────────────────────────
+// ─── Phần 8: Chế độ Đấu trường ────────────────────────────────────────────
 
 model ArenaSession {
   id                  String        @id @default(uuid())
@@ -654,7 +654,7 @@ model CanBo {
   @@map("can_bo")
 }
 
-// ─── Sprint 9: Gamification ────────────────────────────────────────────────
+// ─── Phần 9: Game hoá ──────────────────────────────────────────────────────
 
 model UserProgress {
   id                      String    @id @default(uuid())

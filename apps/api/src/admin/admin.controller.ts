@@ -91,7 +91,7 @@ export class AdminController {
     return this.adminService.deleteAllBankQuestions(subjectId);
   }
 
-  // ── Import Excel ─────────────────────────────────────────────────────
+  // ── Nhập Excel ─────────────────────────────────────────────────────────
   @Post('bank-questions/import/sheets')
   @Roles(...TRAINING_ROLES)
   @UseInterceptors(FileInterceptor('file'))
@@ -137,14 +137,14 @@ export class AdminController {
     );
   }
 
-  // ── Duplicate check ───────────────────────────────────────────────────
+  // ── Kiểm tra trùng lặp ─────────────────────────────────────────────────
   @Post('bank-questions/check-duplicates')
   @Roles(...TRAINING_ROLES)
   checkDuplicates(@Body() body: { texts: string[] }) {
     return this.adminService.checkDuplicates(body.texts);
   }
 
-  // ── Spell check ───────────────────────────────────────────────────────
+  // ── Kiểm tra chính tả ──────────────────────────────────────────────────
   @Post('bank-questions/check-spelling')
   @Roles(...TRAINING_ROLES)
   checkSpelling(@Body() body: { texts: string[] }) {
